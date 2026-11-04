@@ -1,0 +1,58 @@
+
+import api from "./api.js";
+
+/*
+|--------------------------------------------------------------------------
+| GET CUSTOMER ACCOUNTS
+|--------------------------------------------------------------------------
+*/
+
+export const getUserAccounts = async () => {
+  const response = await api.get("/accounts");
+
+  return response.data;
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET SINGLE ACCOUNT
+|--------------------------------------------------------------------------
+*/
+
+export const getAccount = async (accountId) => {
+  if (
+    accountId === undefined ||
+    accountId === null ||
+    String(accountId).trim() === ""
+  ) {
+    throw new Error("Account ID is required");
+  }
+
+  const response = await api.get(
+    `/accounts/${encodeURIComponent(String(accountId).trim())}`,
+  );
+
+  return response.data;
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET ACCOUNT BALANCE
+|--------------------------------------------------------------------------
+*/
+
+export const getAccountBalance = async (accountId) => {
+  if (
+    accountId === undefined ||
+    accountId === null ||
+    String(accountId).trim() === ""
+  ) {
+    throw new Error("Account ID is required");
+  }
+
+  const response = await api.get(
+    `/accounts/${encodeURIComponent(String(accountId).trim())}/balance`,
+  );
+
+  return response.data;
+};
