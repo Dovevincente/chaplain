@@ -50,6 +50,14 @@ export const registerSchema = z.object({
       .max(100)
       .optional()
       .or(z.literal("")),
+
+    accountType: z.enum([
+      "SAVINGS",
+      "CURRENT",
+      "NON_RESIDENT",
+      "DOMICILIARY",
+      "BUSINESS",
+    ]),
   }),
 
   params: z.object({}),

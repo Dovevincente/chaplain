@@ -143,117 +143,80 @@ const Kyc = () => {
 
   const selfieRef = useRef(null);
 
+  const fetchKyc = useCallback(async () => {
+    const response = await api.get("/kyc/me");
+    const data =
+      response?.data?.data ??
+      response?.data ??
+      null;
+
+    // Keep submitted values out of customer dashboard state.
+    return data
+      ? {
+          id: data.id,
+          status: data.status,
+          updatedAt: data.updatedAt,
+          verifiedAt: data.verifiedAt,
+          reviewedAt: data.reviewedAt,
+          rejectionReason: data.rejectionReason,
+        }
+      : null;
+  }, []);
+
   const loadKyc = useCallback(async () => {
-
     setLoading(true);
-
     setError("");
 
     try {
-
-      const response = await api.get("/kyc/me");
-
-      const data =
-
-        response?.data?.data ??
-
-        response?.data ??
-
-        null;
-
-      // Keep submitted values out of customer dashboard state.
-
-      setKyc(data ? {
-
-        id: data.id,
-
-        status: data.status,
-
-        updatedAt: data.updatedAt,
-
-        verifiedAt: data.verifiedAt,
-
-        reviewedAt: data.reviewedAt,
-
-        rejectionReason: data.rejectionReason,
-
-      } : null);
-
+      const data = await fetchKyc();
+      setKyc(data);
     } catch (requestError) {
-
       setError(
-
         getErrorMessage(
-
           requestError,
-
           "Unable to load your KYC verification status.",
-
         ),
-
       );
-
     } finally {
-
       setLoading(false);
-
     }
-
-  }, []);
+  }, [fetchKyc]);
 
   useEffect(() => {
+    let isActive = true;
 
-    loadKyc();
+    fetchKyc()
+      .then((data) => {
+        if (isActive) {
+          setKyc(data);
+        }
+      })
+      .catch((requestError) => {
+        if (isActive) {
+          setError(
+            getErrorMessage(
+              requestError,
+              "Unable to load your KYC verification status.",
+            ),
+          );
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setLoading(false);
+        }
+      });
 
-  }, [loadKyc]);
+    return () => {
+      isActive = false;
+    };
+  }, [fetchKyc]);
 
   const status = String(
 
     kyc?.status || STATUS.NOT_STARTED,
 
   ).toUpperCase();
-
-  const canSubmit =
-
-    status === STATUS.NOT_STARTED ||
-
-    status === STATUS.REJECTED;
-
-  const tin = String(
-
-    kyc?.taxIdentificationNumber || "",
-
-  ).trim();
-
-  const amlCode = String(
-
-    kyc?.amlCode || "",
-
-  ).trim();
-
-  const cftCode = String(
-
-    kyc?.cftCode || "",
-
-  ).trim();
-
-  const tinVerified = Boolean(
-
-    kyc?.taxCodeVerified,
-
-  );
-
-  const amlVerified = Boolean(
-
-    kyc?.amlCodeVerified,
-
-  );
-
-  const cftVerified = Boolean(
-
-    kyc?.cftCodeVerified,
-
-  );
 
   const handleFile = (field, file) => {
 
@@ -311,17 +274,12 @@ const Kyc = () => {
 
   const clearForm = () => {
 
-    setForm((current) => ({
-
+    setForm({
       ...emptyForm,
-
       taxIdentificationNumber: "",
-
       amlCode: "",
-
       cftCode: "",
-
-    }));
+    });
 
     if (frontRef.current) {
 
@@ -1319,32 +1277,6 @@ const VerifiedPanel = () => (
     </div>
 
   </section>
-
-);
-
-const Detail = ({
-
-  label,
-
-  value,
-
-}) => (
-
-  <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/50">
-
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-
-      {label}
-
-    </p>
-
-    <p className="mt-2 break-words font-bold text-slate-900 dark:text-white">
-
-      {value || "—"}
-
-    </p>
-
-  </div>
 
 );
 

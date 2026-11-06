@@ -26,9 +26,8 @@ import { getApiErrorMessage } from "../../utils/error.js";
 
 import { ROUTES } from "../../utils/constants.js";
 
-// Full institution name
-const BANK_NAME =
-  "The Chaplaincy Savings and Credit Union (TCSCU)";
+const BANK_NAME = "The Chaplaincy Savings and Credit Union";
+const BANK_SHORT_NAME = "TCSCU";
 
 const ADMIN_ROLES = [
   "ADMIN",
@@ -86,7 +85,8 @@ const getDestination = (user, location) => {
     return "/admin";
   }
 
-  // Customers can return to the page they originally tried to access.
+  // Customers can return to the page they originally
+  // tried to access.
   const requestedPath = location.state?.from?.pathname;
 
   if (
@@ -209,157 +209,243 @@ const Login = () => {
   };
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-md px-1 sm:px-0">
-      {/* BRAND LOGO AND FULL BANK NAME */}
-      <div className="mb-6 flex flex-col items-center text-center sm:mb-8">
-        <img
-          src="/logom.png"
-          alt={`${BANK_NAME} Logo`}
-          className="mb-4 h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20"
-        />
+    <div className="min-h-screen w-full bg-[#f5f7fa] text-slate-900">
+      {/* TOP HEADER */}
+      <header className="relative z-50 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
 
-        <h2 className="max-w-full text-sm font-bold leading-6 tracking-tight text-slate-900 sm:text-base">
-          {BANK_NAME}
-        </h2>
+          {/* CLICKABLE LOGO - DIRECT HOMEPAGE NAVIGATION */}
+          <button
+            type="button"
+            onClick={() => {
+              window.location.assign("/");
+            }}
+            className="relative z-50 flex min-w-0 cursor-pointer items-center gap-3 border-0 bg-transparent p-0 text-left pointer-events-auto"
+            aria-label={`${BANK_NAME} - Go to homepage`}
+          >
+            <img
+              src="/logom.png"
+              alt={`${BANK_NAME} logo`}
+              className="pointer-events-none h-12 w-12 shrink-0 object-contain sm:h-14 sm:w-14"
+            />
 
-        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-          Digital Banking
-        </p>
-      </div>
+            <div className="pointer-events-none min-w-0">
+              <h2 className="text-sm font-bold leading-5 tracking-tight text-[#123b65] sm:text-base">
+                {BANK_NAME}
+              </h2>
 
-      {/* HEADER */}
-      <div className="mb-7 sm:mb-8">
-        <p className="mb-2 text-sm font-semibold text-blue-600">
-          Welcome back
-        </p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 sm:text-xs">
+                {BANK_SHORT_NAME}
+              </p>
+            </div>
+          </button>
 
-        <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl lg:text-4xl">
-          Sign in to your account
-        </h1>
-
-        <p className="mt-3 max-w-full text-sm leading-6 text-slate-500">
-          Access your accounts, transfers, cards, savings and
-          investments securely.
-        </p>
-      </div>
-
-      {/* ERROR MESSAGE */}
-      {submitError && (
-        <div
-          role="alert"
-          className="mb-5 break-words rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium leading-6 text-red-700"
-        >
-          {submitError}
+          <div className="hidden items-center gap-2 text-sm font-medium text-slate-600 sm:flex">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            Secure Online Banking
+          </div>
         </div>
-      )}
+      </header>
 
-      {/* LOGIN FORM */}
-      <form
-        onSubmit={handleSubmit}
-        noValidate
-        className="w-full space-y-5"
-      >
-        <Input
-          id="login-email"
-          name="email"
-          label="Email address"
-          type="email"
-          value={form.email}
-          onChange={(event) =>
-            updateField("email", event.target.value)
-          }
-          placeholder="you@example.com"
-          autoComplete="email"
-          required
-          error={errors.email}
-          leftIcon={<Mail className="h-4 w-4" />}
-        />
+      {/* MAIN LOGIN CONTENT */}
+      <main className="mx-auto flex w-full max-w-7xl flex-col items-center px-4 pb-12 pt-8 sm:px-6 sm:pt-12 lg:px-8">
 
-        <div className="min-w-0">
-          <Input
-            id="login-password"
-            name="password"
-            label="Password"
-            type={showPassword ? "text" : "password"}
-            value={form.password}
-            onChange={(event) =>
-              updateField("password", event.target.value)
-            }
-            placeholder="Enter your password"
-            autoComplete="current-password"
-            required
-            error={errors.password}
-            leftIcon={<LockKeyhole className="h-4 w-4" />}
-            rightElement={
-              <button
-                type="button"
-                onClick={() =>
-                  setShowPassword((current) => !current)
-                }
-                className="rounded-lg p-1 text-slate-400 transition hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                aria-label={
-                  showPassword ? "Hide password" : "Show password"
-                }
+        {/* LOGIN CARD */}
+        <section className="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+
+          {/* Card top accent */}
+          <div className="h-1.5 w-full bg-[#123b65]" />
+
+          <div className="p-5 sm:p-8">
+
+            {/* LOGIN HEADING */}
+            <div className="mb-7">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                <LockKeyhole className="h-4 w-4" />
+                Secure Member Access
+              </div>
+
+              <h1 className="text-2xl font-bold tracking-tight text-[#123b65] sm:text-3xl">
+                Sign in
+              </h1>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Access your account to manage your finances,
+                transfers, savings and investments.
+              </p>
+            </div>
+
+            {/* ERROR MESSAGE */}
+            {submitError && (
+              <div
+                role="alert"
+                className="mb-5 break-words rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm leading-6 text-red-700"
               >
-                {showPassword ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </button>
-            }
-          />
+                {submitError}
+              </div>
+            )}
 
-          <div className="mt-3 flex justify-end">
-            <Link
-              to={ROUTES.FORGOT_PASSWORD}
-              className="inline-block py-1 text-xs font-semibold text-blue-600 transition hover:text-blue-700 sm:text-sm"
+            {/* LOGIN FORM */}
+            <form
+              onSubmit={handleSubmit}
+              noValidate
+              className="w-full space-y-5"
             >
-              Forgot password?
-            </Link>
+              <Input
+                id="login-email"
+                name="email"
+                label="Email address"
+                type="email"
+                value={form.email}
+                onChange={(event) =>
+                  updateField("email", event.target.value)
+                }
+                placeholder="Enter your email address"
+                autoComplete="email"
+                required
+                error={errors.email}
+                leftIcon={<Mail className="h-4 w-4" />}
+              />
+
+              {/* PASSWORD FIELD */}
+              <div className="min-w-0">
+                <Input
+                  id="login-password"
+                  name="password"
+                  label="Password"
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(event) =>
+                    updateField("password", event.target.value)
+                  }
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  required
+                  error={errors.password}
+                  leftIcon={
+                    <LockKeyhole className="h-4 w-4" />
+                  }
+                  rightElement={
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword((current) => !current)
+                      }
+                      className="rounded-md p-1 text-slate-500 transition hover:text-[#123b65] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      aria-label={
+                        showPassword
+                          ? "Hide password"
+                          : "Show password"
+                      }
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  }
+                />
+
+                {/* FORGOT PASSWORD */}
+                <div className="mt-3 flex justify-end">
+                  <Link
+                    to={ROUTES.FORGOT_PASSWORD}
+                    className="py-1 text-sm font-semibold text-[#145da0] transition hover:text-[#123b65] hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+              </div>
+
+              {/* SIGN IN BUTTON */}
+              <div className="w-full pt-1">
+                <Button
+                  type="submit"
+                  fullWidth
+                  size="lg"
+                  loading={submitting}
+                  rightIcon={
+                    !submitting && (
+                      <ArrowRight className="h-4 w-4" />
+                    )
+                  }
+                >
+                  Sign in
+                </Button>
+              </div>
+            </form>
+
+            {/* REGISTER */}
+            <div className="mt-6 border-t border-slate-200 pt-5 text-center">
+              <p className="text-sm text-slate-600">
+                Not yet a member?
+              </p>
+
+              <Link
+                to={ROUTES.REGISTER}
+                className="mt-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[#145da0] px-5 py-2 text-sm font-bold text-[#145da0] transition hover:bg-[#145da0] hover:text-white"
+              >
+                Open an account
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* SECURITY INFORMATION */}
+        <div className="mt-6 flex w-full max-w-md items-start gap-3 rounded-lg border border-slate-200 bg-white p-4">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              Your security matters
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              {BANK_NAME} will never ask you to share your
+              password or one-time security codes with another
+              person.
+            </p>
           </div>
         </div>
 
-        {/* SIGN IN BUTTON */}
-        <div className="w-full pt-1">
-          <Button
-            type="submit"
-            fullWidth
-            size="lg"
-            loading={submitting}
-            rightIcon={
-              !submitting && <ArrowRight className="h-4 w-4" />
-            }
-          >
-            Sign in securely
-          </Button>
-        </div>
-      </form>
+        {/* FOOTER */}
+        <footer className="mt-10 w-full max-w-4xl border-t border-slate-200 pt-6 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 text-xs font-medium text-slate-500">
+            <Link
+              to="/"
+              className="transition hover:text-[#145da0]"
+            >
+              Home
+            </Link>
 
-      {/* REGISTRATION */}
-      <div className="mt-7 border-t border-slate-100 pt-6 text-center sm:mt-8">
-        <p className="text-sm leading-6 text-slate-500">
-          Don't have a TCSCU account?
-        </p>
+            <Link
+              to={ROUTES.FORGOT_PASSWORD}
+              className="transition hover:text-[#145da0]"
+            >
+              Password Assistance
+            </Link>
 
-        <Link
-          to={ROUTES.REGISTER}
-          className="mt-2 inline-flex min-h-10 items-center justify-center gap-1 text-sm font-bold text-slate-950 transition hover:text-blue-600"
-        >
-          Open an account
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
+            <Link
+              to={ROUTES.REGISTER}
+              className="transition hover:text-[#145da0]"
+            >
+              Open an Account
+            </Link>
+          </div>
 
-      {/* SECURITY NOTICE */}
-      <div className="mt-7 flex items-start gap-3 rounded-2xl bg-slate-50 p-3.5 sm:mt-8 sm:p-4">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <p className="mt-5 text-xs leading-5 text-slate-500">
+            © {new Date().getFullYear()} {BANK_NAME}. All rights
+            reserved.
+          </p>
 
-        <p className="min-w-0 break-words text-xs leading-5 text-slate-500">
-          {BANK_NAME} will never ask you to share your password
-          or one-time security codes with another person.
-        </p>
-      </div>
+          <p className="mt-2 text-[11px] leading-5 text-slate-400">
+            Please protect your login credentials and use a
+            secure device when accessing your account.
+          </p>
+        </footer>
+      </main>
     </div>
   );
 };

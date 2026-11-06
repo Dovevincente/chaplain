@@ -49,6 +49,17 @@ const normalizePhone = (phone) => {
 const normalizeName = (value) =>
   String(value || "").trim();
 
+const normalizeAccountType = (value) =>
+  String(value || "").trim().toUpperCase();
+
+const ALLOWED_ACCOUNT_TYPES = new Set([
+  "SAVINGS",
+  "CURRENT",
+  "NON_RESIDENT",
+  "DOMICILIARY",
+  "BUSINESS",
+]);
+
 const getRefreshExpiry = () =>
   new Date(
     Date.now() +
@@ -118,6 +129,7 @@ export const registerUser = async ({
   firstName,
   lastName,
   country,
+  accountType,
   ipAddress,
   userAgent,
 }) => {
@@ -126,6 +138,7 @@ export const registerUser = async ({
   const normalizedFirstName = normalizeName(firstName);
   const normalizedLastName = normalizeName(lastName);
   const normalizedCountry = String(country || "").trim() || null;
+  const normalizedAccountType = normalizeAccountType(accountType);
 
   if (!normalizedEmail) {
     throw createServiceError("Email address is required.", 400);
@@ -143,9 +156,23 @@ export const registerUser = async ({
     throw createServiceError("Password is required.", 400);
   }
 
-  if (String(password).length < 8) {
+  if (String(password).length < 10) {
     throw createServiceError(
-      "Password must be at least 8 characters long.",
+      "Password must be at least 10 characters long.",
+      400,
+    );
+  }
+
+  if (!normalizedAccountType) {
+    throw createServiceError(
+      "Please select an account type.",
+      400,
+    );
+  }
+
+  if (!ALLOWED_ACCOUNT_TYPES.has(normalizedAccountType)) {
+    throw createServiceError(
+      "The selected account type is invalid.",
       400,
     );
   }
@@ -197,6 +224,12 @@ export const registerUser = async ({
           firstName: normalizedFirstName,
           lastName: normalizedLastName,
           country: normalizedCountry,
+
+          // Record the customer's residency classification.
+          residencyStatus:
+            normalizedAccountType === "NON_RESIDENT"
+              ? "NON_RESIDENT"
+              : "RESIDENT",
         },
       });
 
@@ -224,7 +257,10 @@ export const registerUser = async ({
       const account = await tx.account.create({
         data: {
           accountNumber,
-          type: ACCOUNT.DEFAULT_ACCOUNT_TYPE,
+
+          // Use the account type selected during registration.
+          type: normalizedAccountType,
+
           status: "ACTIVE",
           userId: user.id,
           currencyId: currency.id,
@@ -268,7 +304,7 @@ export const registerUser = async ({
           action: "CREATE",
           entity: "User",
           entityId: user.id,
-          description: "Customer account created",
+          description: `Customer account created with ${normalizedAccountType} account type`,
           ipAddress: ipAddress || null,
         },
       });

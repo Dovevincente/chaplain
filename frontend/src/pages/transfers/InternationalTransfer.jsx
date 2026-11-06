@@ -956,7 +956,6 @@ const InternationalTransfer = () => {
 
                   <div className="mt-5 grid gap-5 sm:grid-cols-2">
 
-                    <div><label htmlFor="transferDate" className="mb-2 block text-sm font-semibold text-slate-700">Requested transfer date <span className="text-xs font-normal text-slate-400">Optional</span></label><input id="transferDate" name="transferDate" type="date" value={form.transferDate} onChange={handleChange} disabled={submitting} min={getToday()} className={`w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 ${errors.transferDate ? "border-rose-300" : "border-slate-200"}`} />{errors.transferDate ? <p className="mt-2 text-xs font-medium text-rose-600">{errors.transferDate}</p> : null}</div>
 
                     <div><label htmlFor="reference" className="mb-2 block text-sm font-semibold text-slate-700">Payment reference <span className="text-xs font-normal text-slate-400">Optional</span></label><input id="reference" name="reference" type="text" maxLength={120} placeholder="e.g. Invoice 1048" value={form.reference} onChange={handleChange} disabled={submitting} className={`w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 ${errors.reference ? "border-rose-300" : "border-slate-200"}`} />{errors.reference ? <p className="mt-2 text-xs font-medium text-rose-600">{errors.reference}</p> : null}</div>
 

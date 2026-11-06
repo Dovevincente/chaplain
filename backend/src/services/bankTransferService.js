@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 
 import prisma from "../config/database.js";
@@ -12,6 +13,8 @@ import { generateReference } from "../utils/reference.js";
 
 import { normalizeIdempotencyKey } from "../utils/transfer.js";
 
+import { sendTransferOtpEmail } from "./emailService.js"; // adjust path if needed
+
 /*
  * ============================================================
  * CONSTANTS
@@ -23,6 +26,9 @@ const MAX_TRANSFER_AMOUNT =
 
 const ZERO =
   new Prisma.Decimal("0");
+
+const OTP_EXPIRY_MINUTES = 10;
+const OTP_MAX_ATTEMPTS = 5;
 
 /*
  * ============================================================
@@ -50,6 +56,38 @@ const normalizeComplianceCode = (value) =>
     .trim()
     .replace(/\s+/g, "")
     .toUpperCase();
+
+/*
+ * ============================================================
+ * OTP HELPERS
+ * ============================================================
+ */
+
+const hashOtp = (code) => {
+  return crypto
+    .createHash("sha256")
+    .update(String(code).trim())
+    .digest("hex");
+};
+
+const generateOtpCode = () => {
+  return String(Math.floor(100000 + Math.random() * 900000));
+};
+
+const maskEmail = (email) => {
+  if (!email) return "****";
+  const [name, domain] = email.split("@");
+  if (!domain) return "****";
+  const visible = name.slice(0, 2);
+  return `${visible}***@${domain}`;
+};
+
+const maskPhone = (phone) => {
+  if (!phone) return "****";
+  const value = String(phone).replace(/\s+/g, "");
+  if (value.length < 4) return "****";
+  return `***${value.slice(-4)}`;
+};
 
 /*
  * ============================================================
@@ -135,22 +173,199 @@ const transferInclude = {
 
 /*
  * ============================================================
+ * REQUEST TRANSFER OTP
+ * ============================================================
+ */
+
+export const requestTransferOtp = async ({
+  userId,
+  method = "email",
+}) => {
+  if (!userId) {
+    throw createError("Authenticated user is required", 401);
+  }
+
+  const normalizedMethod = String(method || "email").toLowerCase();
+
+  if (!["email", "phone"].includes(normalizedMethod)) {
+    throw createError("OTP method must be email or phone", 400);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      profile: {
+        select: {
+          firstName: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    throw createError("User not found", 404);
+  }
+
+  if (normalizedMethod === "email" && !user.email) {
+    throw createError("No email address found on your account", 400);
+  }
+
+  if (normalizedMethod === "phone" && !user.phone) {
+    throw createError("No phone number found on your account", 400);
+  }
+
+  // Phone / SMS is prepared but not fully configured yet
+  if (normalizedMethod === "phone") {
+    throw createError(
+      "SMS OTP is not yet configured. Please use Email for now.",
+      503,
+    );
+  }
+
+  // Invalidate previous unused OTPs
+  await prisma.transferOtp.updateMany({
+    where: {
+      userId,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    data: {
+      usedAt: new Date(),
+    },
+  });
+
+  const otpCode = generateOtpCode();
+  const codeHash = hashOtp(otpCode);
+  const expiresAt = new Date(
+    Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000,
+  );
+
+  await prisma.transferOtp.create({
+    data: {
+      userId,
+      codeHash,
+      method: normalizedMethod,
+      expiresAt,
+    },
+  });
+
+  await sendTransferOtpEmail({
+    to: user.email,
+    firstName: user.profile?.firstName,
+    otpCode,
+    expiresInMinutes: OTP_EXPIRY_MINUTES,
+  });
+
+  return {
+    method: normalizedMethod,
+    expiresIn: OTP_EXPIRY_MINUTES * 60,
+    maskedDestination:
+      normalizedMethod === "email"
+        ? maskEmail(user.email)
+        : maskPhone(user.phone),
+    message: `OTP has been sent to your ${normalizedMethod}`,
+  };
+};
+
+/*
+ * ============================================================
+ * VERIFY TRANSFER OTP
+ * ============================================================
+ */
+
+export const verifyTransferOtp = async ({
+  userId,
+  code,
+  method = "email",
+}) => {
+  if (!userId) {
+    throw createError("Authenticated user is required", 401);
+  }
+
+  const normalizedCode = String(code || "").trim();
+  const normalizedMethod = String(method || "email").toLowerCase();
+
+  if (!normalizedCode) {
+    throw createError("OTP code is required", 400);
+  }
+
+  const otpRecord = await prisma.transferOtp.findFirst({
+    where: {
+      userId,
+      method: normalizedMethod,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  if (!otpRecord) {
+    throw createError(
+      "OTP has expired or is invalid. Please request a new one.",
+      400,
+    );
+  }
+
+  if (otpRecord.attempts >= OTP_MAX_ATTEMPTS) {
+    await prisma.transferOtp.update({
+      where: { id: otpRecord.id },
+      data: { usedAt: new Date() },
+    });
+
+    throw createError(
+      "Too many invalid attempts. Please request a new OTP.",
+      429,
+    );
+  }
+
+  const incomingHash = hashOtp(normalizedCode);
+
+  if (incomingHash !== otpRecord.codeHash) {
+    await prisma.transferOtp.update({
+      where: { id: otpRecord.id },
+      data: {
+        attempts: { increment: 1 },
+      },
+    });
+
+    throw createError("Invalid OTP code", 400);
+  }
+
+  // Mark OTP as used
+  await prisma.transferOtp.update({
+    where: { id: otpRecord.id },
+    data: {
+      usedAt: new Date(),
+    },
+  });
+
+  // Create short-lived token (valid 5 minutes)
+  const otpToken = crypto.randomBytes(32).toString("hex");
+  const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+  await prisma.transferOtp.create({
+    data: {
+      userId,
+      codeHash: hashOtp(otpToken),
+      method: "token",
+      expiresAt: tokenExpiresAt,
+    },
+  });
+
+  return {
+    otpToken,
+    expiresIn: 5 * 60,
+  };
+};
+
+/*
+ * ============================================================
  * VERIFY ONE COMPLIANCE CODE
- *
- * FLOW:
- *
- * TIN
- *  ↓
- * AML
- *  ↓
- * CFT
- *
- * The frontend should call this endpoint one code at a time.
- *
- * The backend also enforces the order:
- *
- * AML cannot be verified before TIN.
- * CFT cannot be verified before AML.
  * ============================================================
  */
 
@@ -210,12 +425,6 @@ export const verifyTransferComplianceCode = async ({
     );
   }
 
-  /*
-   * ----------------------------------------------------------
-   * ADMIN SETTINGS
-   * ----------------------------------------------------------
-   */
-
   const settings =
     await prisma.complianceSettings.findFirst({
       orderBy: {
@@ -230,11 +439,6 @@ export const verifyTransferComplianceCode = async ({
         ? Boolean(settings?.amlCheckEnabled)
         : Boolean(settings?.cftCheckEnabled);
 
-  /*
-   * If this check is disabled by admin,
-   * it is automatically considered not required.
-   */
-
   if (!enabled) {
     return {
       verified: true,
@@ -244,15 +448,6 @@ export const verifyTransferComplianceCode = async ({
         `${label} compliance check is not enabled.`,
     };
   }
-
-  /*
-   * ----------------------------------------------------------
-   * LOAD KYC
-   * ----------------------------------------------------------
-   *
-   * IMPORTANT:
-   * AML/CFT MUST be included here.
-   */
 
   const kyc =
     await prisma.kyc.findUnique({
@@ -280,12 +475,6 @@ export const verifyTransferComplianceCode = async ({
       403,
     );
   }
-
-  /*
-   * ----------------------------------------------------------
-   * TIN
-   * ----------------------------------------------------------
-   */
 
   if (type === "TIN") {
     const storedTin =
@@ -321,14 +510,6 @@ export const verifyTransferComplianceCode = async ({
             : "COMPLETE",
     };
   }
-
-  /*
-   * ----------------------------------------------------------
-   * AML
-   *
-   * AML requires TIN to have already been verified.
-   * ----------------------------------------------------------
-   */
 
   if (type === "AML") {
     if (
@@ -376,14 +557,6 @@ export const verifyTransferComplianceCode = async ({
           : "COMPLETE",
     };
   }
-
-  /*
-   * ----------------------------------------------------------
-   * CFT
-   *
-   * CFT requires AML to have already been verified.
-   * ----------------------------------------------------------
-   */
 
   if (type === "CFT") {
     if (
@@ -449,9 +622,6 @@ export const verifyTransferComplianceCode = async ({
 /*
  * ============================================================
  * RUN COMPLETE TRANSFER COMPLIANCE CHECK
- *
- * This is the FINAL server-side check before money is moved.
- *
  * ============================================================
  */
 
@@ -492,12 +662,6 @@ const runTransferComplianceChecks = async ({
       complianceReason: null,
     };
   }
-
-  /*
-   * ----------------------------------------------------------
-   * LOAD ALL KYC COMPLIANCE VALUES
-   * ----------------------------------------------------------
-   */
 
   const kyc =
     await tx.kyc.findUnique({
@@ -560,12 +724,6 @@ const runTransferComplianceChecks = async ({
 
   const reasons = [];
 
-  /*
-   * ----------------------------------------------------------
-   * TIN CHECK
-   * ----------------------------------------------------------
-   */
-
   if (tinEnabled) {
     const submittedTin =
       normalizeComplianceCode(
@@ -599,12 +757,6 @@ const runTransferComplianceChecks = async ({
     }
   }
 
-  /*
-   * ----------------------------------------------------------
-   * AML CHECK
-   * ----------------------------------------------------------
-   */
-
   if (amlEnabled) {
     const submittedAml =
       normalizeComplianceCode(
@@ -637,12 +789,6 @@ const runTransferComplianceChecks = async ({
       amlCheckStatus = "PASSED";
     }
   }
-
-  /*
-   * ----------------------------------------------------------
-   * CFT CHECK
-   * ----------------------------------------------------------
-   */
 
   if (cftEnabled) {
     const submittedCft =
@@ -715,6 +861,7 @@ export const createBankTransfer = async ({
   cftCode,
   description,
   idempotencyKey,
+  otpToken, // ← OTP token required
 }) => {
   if (!userId) {
     throw createError(
@@ -722,6 +869,41 @@ export const createBankTransfer = async ({
       401,
     );
   }
+
+  // ==========================================================
+  // OTP VERIFICATION
+  // ==========================================================
+  if (!otpToken) {
+    throw createError(
+      "OTP verification is required before creating a transfer",
+      403,
+    );
+  }
+
+  const tokenHash = hashOtp(otpToken);
+
+  const validToken = await prisma.transferOtp.findFirst({
+    where: {
+      userId,
+      method: "token",
+      codeHash: tokenHash,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!validToken) {
+    throw createError(
+      "OTP verification has expired or is invalid. Please verify OTP again.",
+      403,
+    );
+  }
+
+  // Mark token as used
+  await prisma.transferOtp.update({
+    where: { id: validToken.id },
+    data: { usedAt: new Date() },
+  });
 
   if (!accountId) {
     throw createError(
@@ -804,10 +986,6 @@ export const createBankTransfer = async ({
   const result =
     await prisma.$transaction(
       async (tx) => {
-        /*
-         * LOCK ACCOUNT
-         */
-
         const lockedAccounts =
           await tx.$queryRaw`
             SELECT
@@ -845,10 +1023,6 @@ export const createBankTransfer = async ({
           );
         }
 
-        /*
-         * BENEFICIARY
-         */
-
         const beneficiary =
           await tx.beneficiary.findFirst({
             where: {
@@ -864,17 +1038,6 @@ export const createBankTransfer = async ({
             404,
           );
         }
-
-        /*
-         * ------------------------------------------------------
-         * FINAL COMPLIANCE CHECK
-         *
-         * This happens BEFORE:
-         * - debit
-         * - transaction
-         * - transfer creation
-         * ------------------------------------------------------
-         */
 
         const compliance =
           await runTransferComplianceChecks({
@@ -895,10 +1058,6 @@ export const createBankTransfer = async ({
             403,
           );
         }
-
-        /*
-         * BALANCES
-         */
 
         const currentBalance =
           toDecimal(
@@ -955,10 +1114,6 @@ export const createBankTransfer = async ({
           );
         }
 
-        /*
-         * CURRENCY
-         */
-
         const currency =
           await tx.currency.findUnique({
             where: {
@@ -973,18 +1128,10 @@ export const createBankTransfer = async ({
           );
         }
 
-        /*
-         * REFERENCE
-         */
-
         const reference =
           await generateReference(
             "TRF",
           );
-
-        /*
-         * UPDATE ACCOUNT
-         */
 
         const updatedAccount =
           await tx.account.update({
@@ -1007,10 +1154,6 @@ export const createBankTransfer = async ({
                 ),
             },
           });
-
-        /*
-         * CREATE TRANSFER
-         */
 
         const createdTransfer =
           await tx.transfer.create({
@@ -1076,10 +1219,6 @@ export const createBankTransfer = async ({
             include:
               transferInclude,
           });
-
-        /*
-         * LEDGER TRANSACTION
-         */
 
         await tx.transaction.create({
           data: {
@@ -1147,10 +1286,6 @@ export const createBankTransfer = async ({
             },
           },
         });
-
-        /*
-         * AUDIT
-         */
 
         await tx.auditLog.create({
           data: {

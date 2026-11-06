@@ -42,6 +42,13 @@ enum AccountType {
   SAVINGS
   BUSINESS
   INVESTMENT
+  NON_RESIDENT
+  DOMICILIARY
+}
+
+enum ResidencyStatus {
+  RESIDENT
+  NON_RESIDENT
 }
 
 enum AccountStatus {
@@ -97,6 +104,11 @@ enum TransferStatus {
   FAILED
   CANCELLED
   REVERSED
+}
+
+enum TransferOtpChannel {
+  EMAIL
+  PHONE
 }
 
 enum DepositStatus {
@@ -322,6 +334,8 @@ model User {
 
   transactions Transaction[]
 
+  transferOtpChallenges TransferOtpChallenge[]
+
   sentTransfers     Transfer[] @relation("SenderTransfers")
   receivedTransfers Transfer[] @relation("ReceiverTransfers")
 
@@ -375,8 +389,11 @@ model Profile {
   dateOfBirth DateTime?
   nationality String?
   country     String?
-  state       String?
-  city        String?
+
+  residencyStatus ResidencyStatus?
+
+  state String?
+  city  String?
 
   address    String?
   postalCode String?
@@ -671,6 +688,46 @@ model Transfer {
   @@index([status])
   @@index([createdAt])
 }
+
+
+// ============================================================
+// BANK TRANSFER OTP CHALLENGES
+// ============================================================
+
+model TransferOtpChallenge {
+  id String @id @default(cuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  channel TransferOtpChannel
+
+  // Store only the hashed OTP, never the plain six-digit code.
+  otpHash String
+
+  // Bind authorization to the exact intended transfer.
+  transferPayloadHash String
+
+  // Snapshot of the verified destination used for delivery.
+  destinationSnapshot String
+
+  expiresAt DateTime
+
+  attempts Int @default(0)
+  maxAttempts Int @default(5)
+
+  verifiedAt DateTime?
+  consumedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([consumedAt])
+  @@index([userId, createdAt])
+}
+
 
 // ============================================================
 // DEPOSITS

@@ -1,6 +1,6 @@
-﻿import {
+﻿
+import {
   BrowserRouter,
-  Navigate,
   Route,
   Routes,
 } from "react-router-dom";
@@ -29,6 +29,12 @@ import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
 ========================================================= */
 
 import Dashboard from "./pages/dashboard/Dashboard.jsx";
+
+/* =========================================================
+   HOME
+========================================================= */
+
+import Home from "./pages/home/Home.jsx";
 
 /* =========================================================
    CUSTOMER — ACCOUNTS
@@ -197,90 +203,6 @@ import ServerError from "./pages/errors/ServerError.jsx";
 import Maintenance from "./pages/errors/Maintenance.jsx";
 
 /* =========================================================
-   ROLE REDIRECT
-========================================================= */
-
-const RoleRedirect = () => {
-  try {
-    const possibleUserKeys = [
-      "user",
-      "currentUser",
-      "authUser",
-      "profile",
-    ];
-
-    let user = null;
-
-    for (const key of possibleUserKeys) {
-      const raw = localStorage.getItem(key);
-
-      if (!raw) {
-        continue;
-      }
-
-      try {
-        const parsed = JSON.parse(raw);
-
-        if (
-          parsed &&
-          typeof parsed === "object"
-        ) {
-          user =
-            parsed?.user ??
-            parsed?.data?.user ??
-            parsed?.data ??
-            parsed;
-
-          break;
-        }
-      } catch {
-        // Ignore invalid localStorage values.
-      }
-    }
-
-    const role = String(
-      user?.role ??
-        user?.userRole ??
-        user?.accountRole ??
-        "",
-    )
-      .trim()
-      .toUpperCase();
-
-    if (
-      [
-        "ADMIN",
-        "SUPERADMIN",
-        "SUPER_ADMIN",
-        "STAFF",
-        "MANAGER",
-      ].includes(role)
-    ) {
-      return (
-        <Navigate
-          to="/admin"
-          replace
-        />
-      );
-    }
-
-    return (
-      <Navigate
-        to="/dashboard"
-        replace
-      />
-    );
-  } catch {
-    return (
-      <Navigate
-        to="/dashboard"
-        replace
-      />
-    );
-  }
-};
-
-/* =========================================================
    APPLICATION
 ========================================================= */
 
@@ -289,6 +211,17 @@ const App = () => {
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
+
+          {/* =====================================================
+              PUBLIC HOMEPAGE
+              This route must remain outside ProtectedRoute.
+          ====================================================== */}
+
+          <Route
+            path="/"
+            element={<Home />}
+          />
+
           {/* =====================================================
               PUBLIC AUTHENTICATION
           ====================================================== */}
@@ -877,7 +810,7 @@ const App = () => {
                 element={<AdminSystemSettings />}
               />
 
-              {/* Alias used by admin navigation/settings links */}
+              {/* ADMIN SETTINGS */}
 
               <Route
                 path="/admin/settings"
@@ -911,15 +844,6 @@ const App = () => {
           />
 
           {/* =====================================================
-              ROOT
-          ====================================================== */}
-
-          <Route
-            path="/"
-            element={<RoleRedirect />}
-          />
-
-          {/* =====================================================
               404
           ====================================================== */}
 
@@ -927,6 +851,7 @@ const App = () => {
             path="*"
             element={<NotFound />}
           />
+
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Activity,
@@ -13,8 +14,8 @@ import {
   ChevronRight,
   CircleUserRound,
   Copy,
-  CreditCard,
   FileCheck2,
+  Globe2,
   KeyRound,
   Mail,
   Phone,
@@ -206,6 +207,7 @@ const formatDateTime = (value) => {
 
 const formatMoney = (amount, currency = "USD") => {
   const numericAmount = Number(amount);
+  const currencyCode = String(currency || "USD").toUpperCase();
 
   if (!Number.isFinite(numericAmount)) {
     return "—";
@@ -214,14 +216,12 @@ const formatMoney = (amount, currency = "USD") => {
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: String(currency || "USD").toUpperCase(),
+      currency: currencyCode,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(numericAmount);
   } catch {
-    return `${String(currency || "USD").toUpperCase()} ${numericAmount.toFixed(
-      2,
-    )}`;
+    return `${currencyCode} ${numericAmount.toFixed(2)}`;
   }
 };
 
@@ -246,9 +246,7 @@ const getInitials = (customer) => {
     return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
   }
 
-  const name = getFullName(customer);
-
-  return name
+  return getFullName(customer)
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part.charAt(0))
@@ -300,9 +298,7 @@ const getStatusClass = (status) => {
   }
 
   if (
-    ["PENDING", "IN_REVIEW", "PROCESSING"].includes(
-      normalized,
-    )
+    ["PENDING", "IN_REVIEW", "PROCESSING"].includes(normalized)
   ) {
     return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300";
   }
@@ -321,19 +317,30 @@ const getStatusClass = (status) => {
 const StatusBadge = ({ status }) => {
   const normalized = normalizeStatus(status);
 
+  const isSuccessful = [
+    "ACTIVE",
+    "APPROVED",
+    "VERIFIED",
+    "COMPLETED",
+  ].includes(normalized);
+
+  const isFailed = [
+    "BLOCKED",
+    "SUSPENDED",
+    "REJECTED",
+    "FAILED",
+    "CLOSED",
+  ].includes(normalized);
+
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClass(
         normalized,
       )}`}
     >
-      {["ACTIVE", "APPROVED", "VERIFIED", "COMPLETED"].includes(
-        normalized,
-      ) ? (
+      {isSuccessful ? (
         <CheckCircle2 className="h-3.5 w-3.5" />
-      ) : ["BLOCKED", "SUSPENDED", "REJECTED", "FAILED", "CLOSED"].includes(
-          normalized,
-        ) ? (
+      ) : isFailed ? (
         <XCircle className="h-3.5 w-3.5" />
       ) : (
         <Activity className="h-3.5 w-3.5" />
@@ -360,6 +367,7 @@ const AdminUserDetails = () => {
       if (!userId) {
         setError("Customer ID is missing from the URL.");
         setLoading(false);
+        setRefreshing(false);
         return;
       }
 
@@ -385,14 +393,10 @@ const AdminUserDetails = () => {
         const [accountsResponse, transactionsResponse] =
           await Promise.allSettled([
             api.get(
-              `/admin/customers/${encodeURIComponent(
-                userId,
-              )}/accounts`,
+              `/admin/customers/${encodeURIComponent(userId)}/accounts`,
             ),
             api.get(
-              `/admin/customers/${encodeURIComponent(
-                userId,
-              )}/transactions`,
+              `/admin/customers/${encodeURIComponent(userId)}/transactions`,
               {
                 params: {
                   limit: 10,
@@ -444,7 +448,17 @@ const AdminUserDetails = () => {
   );
 
   useEffect(() => {
-    fetchCustomer();
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        fetchCustomer();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [fetchCustomer]);
 
   const totals = useMemo(() => {
@@ -464,8 +478,7 @@ const AdminUserDetails = () => {
     });
 
     const activeAccounts = accounts.filter(
-      (account) =>
-        normalizeStatus(account?.status) === "ACTIVE",
+      (account) => normalizeStatus(account?.status) === "ACTIVE",
     ).length;
 
     return {
@@ -481,7 +494,9 @@ const AdminUserDetails = () => {
   );
 
   const copyValue = async (value) => {
-    if (!value || !navigator?.clipboard) return;
+    if (!value || typeof navigator === "undefined") return;
+
+    if (!navigator.clipboard?.writeText) return;
 
     try {
       await navigator.clipboard.writeText(String(value));
@@ -509,9 +524,7 @@ const AdminUserDetails = () => {
             className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <RefreshCw
-              className={`h-4 w-4 ${
-                refreshing ? "animate-spin" : ""
-              }`}
+              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
             />
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
@@ -586,9 +599,7 @@ const AdminUserDetails = () => {
 
                   <div className="flex flex-wrap gap-2 pb-1">
                     <Link
-                      to={`/admin/customers/${encodeURIComponent(
-                        customer.id,
-                      )}/accounts`}
+                      to={`/admin/customers/${encodeURIComponent(customer.id)}/accounts`}
                       className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
                     >
                       <Wallet className="h-4 w-4" />
@@ -744,9 +755,7 @@ const AdminUserDetails = () => {
                         {customer.email && (
                           <button
                             type="button"
-                            onClick={() =>
-                              copyValue(customer.email)
-                            }
+                            onClick={() => copyValue(customer.email)}
                             aria-label="Copy customer email"
                             className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                           >
@@ -888,9 +897,7 @@ const AdminUserDetails = () => {
 
                         <button
                           type="button"
-                          onClick={() =>
-                            copyValue(customer.kyc.reference)
-                          }
+                          onClick={() => copyValue(customer.kyc.reference)}
                           aria-label="Copy KYC reference"
                           className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                         >
@@ -936,9 +943,7 @@ const AdminUserDetails = () => {
                 </div>
 
                 <Link
-                  to={`/admin/customers/${encodeURIComponent(
-                    customer.id,
-                  )}/accounts`}
+                  to={`/admin/customers/${encodeURIComponent(customer.id)}/accounts`}
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                 >
                   Manage accounts
@@ -963,12 +968,9 @@ const AdminUserDetails = () => {
                 <div className="grid gap-4 p-5 md:grid-cols-2">
                   {accounts.map((account) => {
                     const accountId = account?.id;
-                    const accountNumber =
-                      getAccountNumber(account);
-                    const currency =
-                      getAccountCurrency(account);
-                    const balance =
-                      getAccountBalance(account);
+                    const accountNumber = getAccountNumber(account);
+                    const currency = getAccountCurrency(account);
+                    const balance = getAccountBalance(account);
 
                     return (
                       <article
@@ -1006,9 +1008,7 @@ const AdminUserDetails = () => {
                             <Link
                               to={`/admin/customers/${encodeURIComponent(
                                 customer.id,
-                              )}/accounts/${encodeURIComponent(
-                                accountId,
-                              )}`}
+                              )}/accounts/${encodeURIComponent(accountId)}`}
                               className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 dark:text-blue-300"
                             >
                               Review
@@ -1086,15 +1086,14 @@ const AdminUserDetails = () => {
                             "DEPOSIT",
                             "INTEREST",
                             "REFUND",
-                          ].includes(
-                            normalizeStatus(transaction.type),
-                          );
+                          ].includes(normalizeStatus(transaction.type));
 
                           return (
                             <tr
                               key={
                                 transaction.id ||
-                                transaction.reference
+                                transaction.reference ||
+                                `${transaction.createdAt}-${transaction.amount}`
                               }
                               className="transition hover:bg-slate-50 dark:hover:bg-slate-950/50"
                             >
@@ -1117,9 +1116,7 @@ const AdminUserDetails = () => {
                                   ) : (
                                     <ArrowUpRight className="h-3.5 w-3.5" />
                                   )}
-                                  {normalizeStatus(
-                                    transaction.type,
-                                  )}
+                                  {normalizeStatus(transaction.type)}
                                 </span>
                               </td>
 
@@ -1140,15 +1137,11 @@ const AdminUserDetails = () => {
                               </td>
 
                               <td className="px-5 py-4">
-                                <StatusBadge
-                                  status={transaction.status}
-                                />
+                                <StatusBadge status={transaction.status} />
                               </td>
 
                               <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-300">
-                                {formatDateTime(
-                                  transaction.createdAt,
-                                )}
+                                {formatDateTime(transaction.createdAt)}
                               </td>
 
                               <td className="px-5 py-4 text-right">
@@ -1178,15 +1171,14 @@ const AdminUserDetails = () => {
                         "DEPOSIT",
                         "INTEREST",
                         "REFUND",
-                      ].includes(
-                        normalizeStatus(transaction.type),
-                      );
+                      ].includes(normalizeStatus(transaction.type));
 
                       return (
                         <article
                           key={
                             transaction.id ||
-                            transaction.reference
+                            transaction.reference ||
+                            `${transaction.createdAt}-${transaction.amount}`
                           }
                           className="p-4"
                         >
@@ -1203,17 +1195,13 @@ const AdminUserDetails = () => {
                               </p>
                             </div>
 
-                            <StatusBadge
-                              status={transaction.status}
-                            />
+                            <StatusBadge status={transaction.status} />
                           </div>
 
                           <div className="mt-4 flex items-end justify-between gap-4">
                             <div>
                               <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {normalizeStatus(
-                                  transaction.type,
-                                )}
+                                {normalizeStatus(transaction.type)}
                               </p>
 
                               <p
@@ -1232,9 +1220,7 @@ const AdminUserDetails = () => {
                             </div>
 
                             <p className="text-right text-xs text-slate-500 dark:text-slate-400">
-                              {formatDateTime(
-                                transaction.createdAt,
-                              )}
+                              {formatDateTime(transaction.createdAt)}
                             </p>
                           </div>
 

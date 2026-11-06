@@ -49,6 +49,7 @@ export const register = async (req, res, next) => {
       firstName,
       lastName,
       country,
+      accountType,
     } = req.validated.body;
 
     const result = await registerUser({
@@ -58,6 +59,7 @@ export const register = async (req, res, next) => {
       firstName,
       lastName,
       country,
+      accountType,
       ipAddress: req.ip,
       userAgent: req.get("user-agent"),
     });
@@ -70,7 +72,8 @@ export const register = async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      message: "The Chaplaincy Savings And Credit Union account created successfully",
+      message:
+        "The Chaplaincy Savings And Credit Union account created successfully",
       data: {
         user: result.user,
         account: result.account,
@@ -143,18 +146,22 @@ export const refresh = async (req, res) => {
     });
   } catch (error) {
     // Never log the refresh token or cookie value.
-    console.error("The Chaplaincy Savings and Credit Union refresh failed:", {
-      message: error?.message,
-      statusCode: error?.statusCode,
-      errorName: error?.name,
-    });
+    console.error(
+      "The Chaplaincy Savings and Credit Union refresh failed:",
+      {
+        message: error?.message,
+        statusCode: error?.statusCode,
+        errorName: error?.name,
+      },
+    );
 
     clearAuthCookies(res);
 
     return res.status(401).json({
       success: false,
       code: "REFRESH_SESSION_INVALID",
-      message: "Your session could not be refreshed. Please sign in again.",
+      message:
+        "Your session could not be refreshed. Please sign in again.",
     });
   }
 };
