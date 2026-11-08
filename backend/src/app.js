@@ -1,4 +1,5 @@
-﻿import express from "express";
+﻿
+import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
@@ -28,17 +29,9 @@ import transactionRoutes, {
 } from "./routes/transactionRoutes.js";
 
 import transferRoutes from "./routes/transferRoutes.js";
-
 import bankTransferRoutes from "./routes/bankTransferRoutes.js";
 import bankTransferProcessingRoutes from "./routes/bankTransferProcessingRoutes.js";
 import bankTransferDetailsRoutes from "./routes/bankTransferDetailsRoutes.js";
-
-/*
- * ============================================================
- * ADMIN
- * ============================================================
- */
-
 import adminRoutes from "./routes/adminRoutes.js";
 
 /*
@@ -59,6 +52,7 @@ import env from "./config/env.js";
  */
 
 const app = express();
+
 app.set("trust proxy", 1);
 
 /*
@@ -72,7 +66,63 @@ const __dirname = path.dirname(__filename);
 
 const uploadsDirectory = path.join(__dirname, "../uploads");
 
-app.use("/uploads", express.static(uploadsDirectory));
+/*
+ * ============================================================
+ * CORS CONFIGURATION
+ * ============================================================
+ */
+
+const allowedOrigins = new Set([
+  "https://tcscu.co.uk",
+  "https://www.tcscu.co.uk",
+]);
+
+// Allow local development origins only in development mode.
+if (env.nodeEnv === "development") {
+  allowedOrigins.add("http://localhost:5173");
+  allowedOrigins.add("http://localhost:3000");
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow requests without an Origin header, such as server-to-server requests.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked this origin: ${origin}`));
+  },
+
+  credentials: true,
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+  ],
+
+  optionsSuccessStatus: 204,
+  maxAge: 86400,
+};
+
+// CORS must run before routes and API rate limiting.
+// This middleware also handles browser OPTIONS preflight requests.
+app.use(cors(corsOptions));
 
 /*
  * ============================================================
@@ -90,45 +140,11 @@ app.use(
 
 /*
  * ============================================================
- * CORS  (Updated for Vercel + Render)
+ * STATIC UPLOADS
  * ============================================================
  */
 
-const allowedOrigins = new Set([
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "https://epexbank.vercel.app",
-  ...(env.frontendUrl || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
-]);
-
-app.use(
-  cors({
-    origin(origin, callback) {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      // Exact matches
-      if (allowedOrigins.has(origin)) {
-        return callback(null, true);
-      }
-
-      // Allow all Vercel preview / production deployments while testing
-      if (origin.endsWith(".vercel.app")) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Origin not allowed by CORS"));
-    },
-    credentials: true, // Required for cookies
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  }),
-);
+app.use("/uploads", express.static(uploadsDirectory));
 
 /*
  * ============================================================
@@ -178,6 +194,7 @@ const apiLimiter = rateLimit({
   limit: 200,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+
   message: {
     success: false,
     message: "Too many requests. Please try again later.",
@@ -221,7 +238,7 @@ app.get("/api/health", healthHandler);
 
 /*
  * ============================================================
- * ROUTES
+ * API ROUTES
  * ============================================================
  */
 
