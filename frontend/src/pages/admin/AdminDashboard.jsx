@@ -495,8 +495,7 @@ const AdminPage = () => {
       </div>
     );
   }
-
-  return (
+    return (
     <div className="min-h-full bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-8">
 
@@ -819,141 +818,50 @@ const AdminPage = () => {
               ["Frozen accounts", riskSnapshot.frozenAccounts, "bg-amber-50 text-amber-700"],
               ["Suspended accounts", riskSnapshot.suspendedAccounts, "bg-orange-50 text-orange-700"],
               ["Blocked customers", riskSnapshot.blockedCustomers, "bg-rose-50 text-rose-700"],
-              ["Failed transactions", riskSnapshot.failedTransactions, "bg-red-50 text-red-700"],
+              ["Failed transactions", riskSnapshot.failedTransactions, "bg-rose-50 text-rose-700"],
               ["Reversed transactions", riskSnapshot.reversedTransactions, "bg-violet-50 text-violet-700"],
-              ["Defaulted loans", riskSnapshot.defaultedLoans, "bg-red-50 text-red-700"],
-              ["Blocked cards", riskSnapshot.blockedCards, "bg-slate-100 text-slate-700"],
-              ["Frozen cards", riskSnapshot.frozenCards, "bg-amber-50 text-amber-700"],
+              ["Defaulted loans", riskSnapshot.defaultedLoans, "bg-amber-50 text-amber-700"],
+              ["Blocked cards", riskSnapshot.blockedCards, "bg-rose-50 text-rose-700"],
+              ["Frozen cards", riskSnapshot.frozenCards, "bg-orange-50 text-orange-700"],
               ["Rejected KYC", riskSnapshot.rejectedKyc, "bg-rose-50 text-rose-700"],
             ].map(([label, value, tone]) => (
               <div
                 key={label}
                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
               >
-                <p className="text-sm font-medium text-slate-500">{label}</p>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="text-2xl font-bold text-slate-950">
-                    {formatNumber(value)}
-                  </p>
-                  <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${tone}`}>
-                    Review
-                  </span>
+                <div className={`inline-flex rounded-lg px-3 py-2 text-xs font-semibold ${tone}`}>
+                  {label}
                 </div>
+                <p className="mt-4 text-2xl font-bold text-slate-950">
+                  {formatNumber(value)}
+                </p>
               </div>
             ))}
           </div>
         </AdminSection>
-
-        {/* CUSTOMER & ACCOUNT CONTROL */}
+                {/* INVESTMENT OPERATIONS */}
         <AdminSection
-          title="Customer & account control"
-          description="Manage customer records, accounts and authorized account operations."
+          title="Investment operations"
+          description="Manage investment products and customer investment activity."
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <AdminAction
-              title="Customer management"
-              description="Search customers, review profiles and manage customer status."
-              icon={Users}
-              onClick={() => navigate("/admin/customers")}
-            />
-            <AdminAction
-              title="Account management"
-              description="Review accounts, balances, ownership and account status."
-              icon={WalletCards}
-              onClick={() => navigate("/admin/accounts")}
-            />
-            <AdminAction
-              title="Banking operations"
-              description="Perform authorized account-level operational actions."
-              icon={Building2}
-              onClick={() => navigate("/admin/operations")}
-            />
-          </div>
-        </AdminSection>
-
-        {/* TRANSACTION & MONEY MOVEMENT */}
-        <AdminSection
-          title="Transaction & money movement"
-          description="Central access for transaction, transfer, deposit and withdrawal processing."
-        >
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <AdminAction
-              title="Transactions"
-              description="Review transaction activity, statuses and operational records."
-              icon={ArrowUpRight}
-              onClick={() => navigate("/admin/transactions")}
-            />
-            <AdminAction
-              title="Transfers"
-              description="Review and manage customer transfer operations."
-              icon={ArrowDownToLine}
-              onClick={() => navigate("/admin/transfers")}
-            />
-            <AdminAction
-              title="Deposits"
-              description="Review customer deposit activity and deposit operations."
-              icon={Banknote}
-              onClick={() => navigate("/admin/deposits")}
-            />
-            <AdminAction
-              title="Withdrawals"
-              description="Review withdrawal requests and processing activity."
-              icon={Wallet}
-              onClick={() => navigate("/admin/withdrawals")}
-            />
-          </div>
-        </AdminSection>
-
-        {/* LENDING */}
-        <AdminSection
-          title="Lending & credit"
-          description="Administrative control over the bank's lending workflow."
-        >
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <AdminAction
-              title="Loan management"
-              description="Review applications, approvals, disbursements and loan accounts."
-              icon={Landmark}
-              onClick={() => navigate("/admin/loans")}
-            />
-            <AdminAction
-              title="Loan applications"
-              description="Review and process customer loan applications."
-              icon={FileCheck2}
-              onClick={() => navigate("/admin/loans")}
-            />
-            <AdminAction
-              title="Loan operations"
-              description="Access loan details and ongoing loan administration."
-              icon={TrendingUp}
-              onClick={() => navigate("/admin/loans")}
-            />
-          </div>
-        </AdminSection>
-
-        {/* INVESTMENTS */}
-        <AdminSection
-          title="Investments & wealth"
-          description="Manage the investment and share products already available in The Chaplaincy Savings and Credit Union (TCSCU)."
-        >
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <AdminAction
-              title="Investments"
-              description="Review investment accounts, products and customer investment activity."
-              icon={TrendingUp}
-              onClick={() => navigate("/admin/investments")}
-            />
-            <AdminAction
-              title="Shares"
-              description="Manage share orders, holdings and related administration."
-              icon={BarChart3}
-              onClick={() => navigate("/admin/shares")}
-            />
             <AdminAction
               title="Investment operations"
               description="Access the investment management workspace."
               icon={DollarSign}
               onClick={() => navigate("/admin/investments")}
+            />
+            <AdminAction
+              title="Share management"
+              description="Review and manage customer share orders."
+              icon={BarChart3}
+              onClick={() => navigate("/admin/shares")}
+            />
+            <AdminAction
+              title="Loan management"
+              description="Review loan applications and lending operations."
+              icon={Landmark}
+              onClick={() => navigate("/admin/loans")}
             />
           </div>
         </AdminSection>

@@ -19,14 +19,40 @@ import {
 import { Link } from "react-router-dom";
 import api from "../../services/api.js";
 
+const DEFAULT_COMPLIANCE_SETTINGS = {
+  id: null,
+  tinCheckEnabled: false,
+  amlCheckEnabled: false,
+  cftCheckEnabled: false,
+  emailDebitAlertsEnabled: true,
+  smsDebitAlertsEnabled: true,
+  inAppDebitAlertsEnabled: true,
+  createdAt: null,
+  updatedAt: null,
+};
+
+const COMPLIANCE_FIELDS = [
+  "tinCheckEnabled",
+  "amlCheckEnabled",
+  "cftCheckEnabled",
+  "emailDebitAlertsEnabled",
+  "smsDebitAlertsEnabled",
+  "inAppDebitAlertsEnabled",
+];
+
+const getSettingsSource = (payload) =>
+  payload?.settings ??
+  payload?.configuration ??
+  payload?.config ??
+  payload?.data?.settings ??
+  payload?.data?.configuration ??
+  payload?.data?.config ??
+  payload?.data ??
+  payload ??
+  {};
+
 const normalizeSettings = (payload) => {
-  const source =
-    payload?.settings ??
-    payload?.configuration ??
-    payload?.config ??
-    payload?.data ??
-    payload ??
-    {};
+  const source = getSettingsSource(payload);
 
   return {
     environment:
@@ -113,26 +139,14 @@ const normalizeSettings = (payload) => {
 };
 
 const normalizeComplianceSettings = (payload) => {
-  const source =
-    payload?.data?.settings ??
-    payload?.settings ??
-    payload?.configuration ??
-    payload?.config ??
-    payload?.data ??
-    payload ??
-    {};
+  const source = getSettingsSource(payload);
 
   return {
     id: source?.id ?? null,
 
-    tinCheckEnabled:
-      source?.tinCheckEnabled === true,
-
-    amlCheckEnabled:
-      source?.amlCheckEnabled === true,
-
-    cftCheckEnabled:
-      source?.cftCheckEnabled === true,
+    tinCheckEnabled: source?.tinCheckEnabled === true,
+    amlCheckEnabled: source?.amlCheckEnabled === true,
+    cftCheckEnabled: source?.cftCheckEnabled === true,
 
     emailDebitAlertsEnabled:
       source?.emailDebitAlertsEnabled !== false,
@@ -143,28 +157,54 @@ const normalizeComplianceSettings = (payload) => {
     inAppDebitAlertsEnabled:
       source?.inAppDebitAlertsEnabled !== false,
 
-    createdAt:
-      source?.createdAt ?? null,
-
-    updatedAt:
-      source?.updatedAt ?? null,
+    createdAt: source?.createdAt ?? null,
+    updatedAt: source?.updatedAt ?? null,
   };
 };
+
+const hasComplianceSettings = (payload) => {
+  const source = getSettingsSource(payload);
+
+  return COMPLIANCE_FIELDS.some((field) =>
+    Object.prototype.hasOwnProperty.call(source, field),
+  );
+};
+
+const getErrorMessage = (
+  error,
+  fallback = "Something went wrong. Please try again.",
+) =>
+  error?.response?.data?.message ||
+  error?.response?.data?.error ||
+  error?.message ||
+  fallback;
+
 const normalizeStatus = (value) => {
-  const normalized = String(value ?? "").trim().toUpperCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
 
   if (
-    ["CONNECTED", "ONLINE", "HEALTHY", "RUNNING", "ACTIVE", "OK"].includes(
-      normalized,
-    )
+    [
+      "CONNECTED",
+      "ONLINE",
+      "HEALTHY",
+      "RUNNING",
+      "ACTIVE",
+      "OK",
+    ].includes(normalized)
   ) {
     return "healthy";
   }
 
   if (
-    ["DISCONNECTED", "OFFLINE", "FAILED", "ERROR", "DOWN"].includes(
-      normalized,
-    )
+    [
+      "DISCONNECTED",
+      "OFFLINE",
+      "FAILED",
+      "ERROR",
+      "DOWN",
+    ].includes(normalized)
   ) {
     return "error";
   }
@@ -250,10 +290,16 @@ const SettingValue = ({ value }) => {
   );
 };
 
-const Toggle = ({ checked, onChange, disabled = false }) => (
+const Toggle = ({
+  checked,
+  onChange,
+  disabled = false,
+  label,
+}) => (
   <button
     type="button"
     role="switch"
+    aria-label={label}
     aria-checked={checked}
     disabled={disabled}
     onClick={() => onChange(!checked)}
@@ -275,6 +321,45 @@ const Toggle = ({ checked, onChange, disabled = false }) => (
   </button>
 );
 
+const complianceControls = [
+  {
+    key: "tinCheckEnabled",
+    title: "TIN / Tax Code Check",
+    description:
+      "Require a verified Tax Identification Number before an eligible transfer can proceed.",
+  },
+  {
+    key: "amlCheckEnabled",
+    title: "AML Check",
+    description:
+      "Enable the internal AML compliance gate for transfers using the customer's verified KYC status.",
+  },
+  {
+    key: "cftCheckEnabled",
+    title: "CFT Check",
+    description:
+      "Enable the internal CFT compliance gate for transfers using the customer's verified KYC status.",
+  },
+  {
+    key: "emailDebitAlertsEnabled",
+    title: "Email Debit Alerts",
+    description:
+      "Send an email notification after a completed transfer debits the customer's account.",
+  },
+  {
+    key: "smsDebitAlertsEnabled",
+    title: "SMS Debit Alerts",
+    description:
+      "Enable SMS debit notifications after a completed transfer.",
+  },
+  {
+    key: "inAppDebitAlertsEnabled",
+    title: "In-App Debit Alerts",
+    description:
+      "Create an in-app transaction notification after a completed transfer.",
+  },
+];
+
 const SystemSettings = () => {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -282,10 +367,23 @@ const SystemSettings = () => {
   const [error, setError] = useState("");
 
   const [complianceSettings, setComplianceSettings] = useState(null);
+  const [savedComplianceSettings, setSavedComplianceSettings] =
+    useState(null);
   const [complianceLoading, setComplianceLoading] = useState(true);
   const [complianceSaving, setComplianceSaving] = useState(false);
   const [complianceError, setComplianceError] = useState("");
   const [complianceSuccess, setComplianceSuccess] = useState("");
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (!complianceSettings || !savedComplianceSettings) {
+      return false;
+    }
+
+    return COMPLIANCE_FIELDS.some(
+      (field) =>
+        complianceSettings[field] !== savedComplianceSettings[field],
+    );
+  }, [complianceSettings, savedComplianceSettings]);
 
   const fetchSettings = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -300,13 +398,14 @@ const SystemSettings = () => {
       const response = await api.get("/admin/settings");
       setSettings(normalizeSettings(response?.data));
     } catch (requestError) {
-      const message =
-        requestError?.response?.data?.message ||
-        requestError?.message ||
-        "Unable to load system settings.";
+      setError(
+        getErrorMessage(
+          requestError,
+          "Unable to load system settings.",
+        ),
+      );
 
-      setError(message);
-      setSettings(null);
+      // Preserve previously loaded settings if a refresh fails.
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -318,19 +417,26 @@ const SystemSettings = () => {
     setComplianceError("");
 
     try {
-      const response = await api.get("/admin/compliance/settings");
-
-      setComplianceSettings(
-        normalizeComplianceSettings(response?.data),
+      const response = await api.get(
+        "/admin/compliance/settings",
       );
-    } catch (requestError) {
-      const message =
-        requestError?.response?.data?.message ||
-        requestError?.message ||
-        "Unable to load compliance settings.";
 
-      setComplianceError(message);
-      setComplianceSettings(null);
+      const normalized = normalizeComplianceSettings(
+        response?.data,
+      );
+
+      setComplianceSettings(normalized);
+      setSavedComplianceSettings(normalized);
+    } catch (requestError) {
+      setComplianceError(
+        getErrorMessage(
+          requestError,
+          "Unable to load compliance settings.",
+        ),
+      );
+
+      // Do not replace existing settings with empty defaults on refresh.
+      setComplianceSettings((current) => current);
     } finally {
       setComplianceLoading(false);
     }
@@ -341,86 +447,115 @@ const SystemSettings = () => {
     fetchComplianceSettings();
   }, [fetchSettings, fetchComplianceSettings]);
 
+  const refreshAll = async () => {
+    if (loading || refreshing || complianceLoading || complianceSaving) {
+      return;
+    }
+
+    await Promise.all([
+      fetchSettings(true),
+      fetchComplianceSettings(),
+    ]);
+  };
+
   const updateComplianceField = (field, value) => {
+    if (!COMPLIANCE_FIELDS.includes(field)) return;
+
     setComplianceSuccess("");
     setComplianceError("");
 
-    setComplianceSettings((current) => ({
-      ...current,
-      [field]: value,
-    }));
+    setComplianceSettings((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        [field]: value,
+      };
+    });
+  };
+
+  const resetComplianceChanges = () => {
+    if (!savedComplianceSettings || complianceSaving) return;
+
+    setComplianceSettings({ ...savedComplianceSettings });
+    setComplianceError("");
+    setComplianceSuccess("");
   };
 
   const saveComplianceSettings = async () => {
-    if (!complianceSettings || complianceSaving) return;
+    if (
+      !complianceSettings ||
+      complianceSaving ||
+      !hasUnsavedChanges
+    ) {
+      return;
+    }
 
     setComplianceSaving(true);
     setComplianceError("");
     setComplianceSuccess("");
 
-    try {
-      const payload = {
-        tinCheckEnabled: Boolean(
-          complianceSettings.tinCheckEnabled,
-        ),
-        amlCheckEnabled: Boolean(
-          complianceSettings.amlCheckEnabled,
-        ),
-        cftCheckEnabled: Boolean(
-          complianceSettings.cftCheckEnabled,
-        ),
-        emailDebitAlertsEnabled: Boolean(
-          complianceSettings.emailDebitAlertsEnabled,
-        ),
-        smsDebitAlertsEnabled: Boolean(
-          complianceSettings.smsDebitAlertsEnabled,
-        ),
-        inAppDebitAlertsEnabled: Boolean(
-          complianceSettings.inAppDebitAlertsEnabled,
-        ),
-      };
+    const payload = Object.fromEntries(
+      COMPLIANCE_FIELDS.map((field) => [
+        field,
+        Boolean(complianceSettings[field]),
+      ]),
+    );
 
+    try {
       const response = await api.put(
         "/admin/compliance/settings",
         payload,
       );
 
-      setComplianceSettings(
-        normalizeComplianceSettings(response?.data),
-      );
+      // A successful PUT confirms the submitted settings were accepted.
+      // Use returned settings when available; otherwise retain the saved payload.
+      const returnedSettings = hasComplianceSettings(response?.data)
+        ? normalizeComplianceSettings(response.data)
+        : {
+            ...complianceSettings,
+            ...payload,
+            updatedAt: new Date().toISOString(),
+          };
+
+      setComplianceSettings(returnedSettings);
+      setSavedComplianceSettings(returnedSettings);
 
       setComplianceSuccess(
         "Compliance and debit alert settings saved successfully.",
       );
     } catch (requestError) {
-      const message =
-        requestError?.response?.data?.message ||
-        requestError?.message ||
-        "Unable to save compliance settings.";
-
-      setComplianceError(message);
+      setComplianceError(
+        getErrorMessage(
+          requestError,
+          "Unable to save compliance settings.",
+        ),
+      );
     } finally {
       setComplianceSaving(false);
     }
   };
 
-  const serviceChecks = useMemo(
+    const serviceChecks = useMemo(
     () => [
       {
         label: "API service",
-        description: "Core The Chaplaincy Savings and Credit Union (TCSCU) API availability",
+        description:
+          "Core TCSCU API availability and server response.",
         value: settings?.apiStatus,
         icon: ServerCog,
       },
       {
         label: "Database",
-        description: "Primary banking database connection",
+        description:
+          "Primary banking database connection.",
         value: settings?.databaseStatus,
         icon: Database,
       },
       {
         label: "Realtime service",
-        description: "Socket and realtime event availability",
+        description:
+          "Socket and realtime event availability.",
         value: settings?.realtimeStatus,
         icon: Wifi,
       },
@@ -474,45 +609,6 @@ const SystemSettings = () => {
     (item) => item.value !== null && item.value !== undefined,
   );
 
-  const complianceControls = [
-    {
-      key: "tinCheckEnabled",
-      title: "TIN / Tax Code Check",
-      description:
-        "Require a verified Tax Identification Number before an eligible transfer can proceed.",
-    },
-    {
-      key: "amlCheckEnabled",
-      title: "AML Check",
-      description:
-        "Enable the internal AML compliance gate for transfers using the customer's verified KYC status.",
-    },
-    {
-      key: "cftCheckEnabled",
-      title: "CFT Check",
-      description:
-        "Enable the internal CFT compliance gate for transfers using the customer's verified KYC status.",
-    },
-    {
-      key: "emailDebitAlertsEnabled",
-      title: "Email Debit Alerts",
-      description:
-        "Send an email notification after a completed transfer debits the customer's account.",
-    },
-    {
-      key: "smsDebitAlertsEnabled",
-      title: "SMS Debit Alerts",
-      description:
-        "Enable SMS debit notifications after a completed transfer.",
-    },
-    {
-      key: "inAppDebitAlertsEnabled",
-      title: "In-App Debit Alerts",
-      description:
-        "Create an in-app transaction notification after a completed transfer.",
-    },
-  ];
-
   return (
     <div className="min-h-full bg-slate-50 px-4 py-5 dark:bg-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -547,10 +643,7 @@ const SystemSettings = () => {
 
             <button
               type="button"
-              onClick={() => {
-                fetchSettings(true);
-                fetchComplianceSettings();
-              }}
+              onClick={refreshAll}
               disabled={
                 loading ||
                 refreshing ||
@@ -574,7 +667,10 @@ const SystemSettings = () => {
         </header>
 
         {error && (
-          <section className="rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/20">
+          <section
+            role="alert"
+            className="rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/20"
+          >
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
 
@@ -775,7 +871,7 @@ const SystemSettings = () => {
               </article>
             </section>
 
-            <section className="rounded-2xl border border-blue-200 bg-white shadow-sm dark:border-blue-900/60 dark:bg-slate-900">
+                        <section className="rounded-2xl border border-blue-200 bg-white shadow-sm dark:border-blue-900/60 dark:bg-slate-900">
               <div className="border-b border-blue-100 bg-blue-50/60 p-5 dark:border-blue-900/60 dark:bg-blue-950/20">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
@@ -796,7 +892,10 @@ const SystemSettings = () => {
               </div>
 
               {complianceError && (
-                <div className="border-b border-red-200 bg-red-50 px-5 py-4 dark:border-red-900/60 dark:bg-red-950/20">
+                <div
+                  role="alert"
+                  className="border-b border-red-200 bg-red-50 px-5 py-4 dark:border-red-900/60 dark:bg-red-950/20"
+                >
                   <div className="flex items-start gap-3">
                     <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
                     <div>
@@ -812,7 +911,10 @@ const SystemSettings = () => {
               )}
 
               {complianceSuccess && (
-                <div className="border-b border-emerald-200 bg-emerald-50 px-5 py-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                <div
+                  role="status"
+                  className="border-b border-emerald-200 bg-emerald-50 px-5 py-4 dark:border-emerald-900/60 dark:bg-emerald-950/20"
+                >
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                     <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
@@ -840,7 +942,7 @@ const SystemSettings = () => {
                         className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-slate-900 dark:text-white">
                               {control.title}
                             </h3>
@@ -863,15 +965,13 @@ const SystemSettings = () => {
 
                         <div className="shrink-0">
                           <Toggle
+                            label={control.title}
                             checked={Boolean(
                               complianceSettings[control.key],
                             )}
                             disabled={complianceSaving}
                             onChange={(value) =>
-                              updateComplianceField(
-                                control.key,
-                                value,
-                              )
+                              updateComplianceField(control.key, value)
                             }
                           />
                         </div>
@@ -885,27 +985,45 @@ const SystemSettings = () => {
                         Save administrator controls
                       </p>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Changes are saved securely through the protected admin
-                        API and recorded in the audit log.
+                        {hasUnsavedChanges
+                          ? "You have unsaved changes. Save them to apply the updated configuration."
+                          : "Your displayed settings match the last successfully saved configuration."}
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={saveComplianceSettings}
-                      disabled={complianceSaving}
-                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {complianceSaving ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={resetComplianceChanges}
+                        disabled={
+                          complianceSaving || !hasUnsavedChanges
+                        }
+                        className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        Discard changes
+                      </button>
 
-                      {complianceSaving
-                        ? "Saving..."
-                        : "Save Settings"}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={saveComplianceSettings}
+                        disabled={
+                          complianceSaving ||
+                          !hasUnsavedChanges ||
+                          complianceLoading
+                        }
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {complianceSaving ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+
+                        {complianceSaving
+                          ? "Saving..."
+                          : "Save Settings"}
+                      </button>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -924,9 +1042,14 @@ const SystemSettings = () => {
                   <button
                     type="button"
                     onClick={fetchComplianceSettings}
-                    className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                    disabled={complianceLoading}
+                    className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <RefreshCw
+                      className={`h-4 w-4 ${
+                        complianceLoading ? "animate-spin" : ""
+                      }`}
+                    />
                     Retry
                   </button>
                 </div>
@@ -985,8 +1108,8 @@ const SystemSettings = () => {
 
                   <p className="mx-auto mt-1 max-w-lg text-sm leading-6 text-slate-500 dark:text-slate-400">
                     The current backend settings endpoint did not expose
-                    editable operational flags. No values have been invented
-                    on the client.
+                    operational flags. No values have been invented on
+                    the client.
                   </p>
                 </div>
               )}
@@ -1003,9 +1126,9 @@ const SystemSettings = () => {
                     </h2>
 
                     <p className="mt-1 text-sm leading-6 text-blue-800 dark:text-blue-300">
-                      This interface uses the authenticated administrator API.
-                      Secrets and sensitive infrastructure credentials remain
-                      outside the client application.
+                      This interface uses the authenticated administrator
+                      API. Secrets and sensitive infrastructure credentials
+                      remain outside the client application.
                     </p>
                   </div>
                 </div>
@@ -1052,9 +1175,10 @@ const SystemSettings = () => {
                 Administrative controls are protected
               </p>
               <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                Configuration data is requested from the authenticated admin
-                API. Secrets and sensitive infrastructure credentials should
-                remain on the server and outside the client application.
+                Configuration data is requested from the authenticated
+                admin API. Secrets and sensitive infrastructure credentials
+                should remain on the server and outside the client
+                application.
               </p>
             </div>
           </div>

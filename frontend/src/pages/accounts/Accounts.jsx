@@ -1,3 +1,4 @@
+
 import { useNavigate } from "react-router-dom";
 import {
   ArrowDownToLine,
@@ -60,6 +61,30 @@ const getStatusClasses = (status) => {
   }
 };
 
+const BalanceCard = ({ label, amount, currency, description, icon }) => {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          {label}
+        </p>
+
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+          {icon}
+        </div>
+      </div>
+
+      <p className="mt-4 break-words text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
+        {formatMoney(amount, currency)}
+      </p>
+
+      <p className="mt-2 text-xs leading-5 text-slate-500">
+        {description}
+      </p>
+    </div>
+  );
+};
+
 const AccountCard = ({ account, onCopy }) => {
   const navigate = useNavigate();
   const [showAccountNumber, setShowAccountNumber] = useState(false);
@@ -67,13 +92,14 @@ const AccountCard = ({ account, onCopy }) => {
   const accountNumber = String(account?.accountNumber || "");
   const currencyCode = account?.currency?.code || "USD";
 
-  const availableBalance = Number(
-    account?.availableBalance ?? 0,
-  );
+  // Total account balance includes both available and ledger funds.
+  const totalBalance = Number(account?.balance ?? 0);
 
-  const ledgerBalance = Number(
-    account?.ledgerBalance ?? 0,
-  );
+  // Funds currently available for customer transactions.
+  const availableBalance = Number(account?.availableBalance ?? 0);
+
+  // Funds held in the ledger and not yet released.
+  const ledgerBalance = Number(account?.ledgerBalance ?? 0);
 
   const status = account?.status || "UNKNOWN";
 
@@ -84,11 +110,9 @@ const AccountCard = ({ account, onCopy }) => {
 
   return (
     <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-
       {/* Account header */}
       <div className="bg-slate-950 p-6 text-white sm:p-7">
         <div className="flex items-start justify-between gap-4">
-
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10">
               <Landmark className="h-5 w-5" />
@@ -107,37 +131,63 @@ const AccountCard = ({ account, onCopy }) => {
 
           <span
             className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ring-1 ${getStatusClasses(
-              status,
+              status
             )}`}
           >
             {status}
           </span>
         </div>
 
-        {/* Balance */}
+        {/* Total balance */}
         <div className="mt-8">
           <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-            Available Balance
+            Total Balance
           </p>
 
           <p className="mt-2 break-words text-3xl font-bold tracking-tight sm:text-4xl">
-            {formatMoney(
-              availableBalance,
-              currencyCode,
-            )}
+            {formatMoney(totalBalance, currencyCode)}
           </p>
 
-          <p className="mt-2 text-xs text-slate-500">
-            Available for transfers and payments
+          <p className="mt-2 text-xs text-slate-400">
+            Your complete account balance, including ledger funds.
           </p>
+        </div>
+
+        {/* Balance breakdown */}
+        <div className="mt-7 grid grid-cols-2 gap-3 border-t border-white/10 pt-5">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-emerald-300">
+              Available Balance
+            </p>
+
+            <p className="mt-2 break-words text-lg font-bold text-white sm:text-xl">
+              {formatMoney(availableBalance, currencyCode)}
+            </p>
+
+            <p className="mt-1 text-[11px] text-slate-400">
+              Available to spend
+            </p>
+          </div>
+
+          <div className="min-w-0 border-l border-white/10 pl-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-amber-300">
+              Ledger Balance
+            </p>
+
+            <p className="mt-2 break-words text-lg font-bold text-white sm:text-xl">
+              {formatMoney(ledgerBalance, currencyCode)}
+            </p>
+
+            <p className="mt-1 text-[11px] text-slate-400">
+              Awaiting release
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Account information */}
       <div className="p-6 sm:p-7">
-
         <div className="grid gap-5 sm:grid-cols-2">
-
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
               Account Number
@@ -153,9 +203,7 @@ const AccountCard = ({ account, onCopy }) => {
                   <button
                     type="button"
                     onClick={() =>
-                      setShowAccountNumber(
-                        (current) => !current,
-                      )
+                      setShowAccountNumber((current) => !current)
                     }
                     className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                     aria-label={
@@ -199,19 +247,6 @@ const AccountCard = ({ account, onCopy }) => {
 
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              Ledger Balance
-            </p>
-
-            <p className="mt-2 text-sm font-semibold text-slate-900">
-              {formatMoney(
-                ledgerBalance,
-                currencyCode,
-              )}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
               Account Status
             </p>
 
@@ -223,18 +258,43 @@ const AccountCard = ({ account, onCopy }) => {
               </span>
             </div>
           </div>
+
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              Account Type
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-slate-900">
+              {formatAccountType(account?.type)}
+            </p>
+          </div>
+        </div>
+
+        {/* Balance explanation */}
+        <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-start gap-3">
+            <WalletCards className="mt-0.5 h-5 w-5 shrink-0 text-slate-600" />
+
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Understanding your balances
+              </h3>
+
+              <p className="mt-2 text-xs leading-6 text-slate-600">
+                Your total balance combines your available balance and
+                ledger balance. Available funds can be used for eligible
+                transfers and payments. Ledger funds remain held until
+                they are released by an authorised administrator.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Account actions */}
         <div className="mt-7 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-3">
-
           <button
             type="button"
-            onClick={() =>
-              navigate(
-                `/accounts/${account.id}`,
-              )
-            }
+            onClick={() => navigate(`/accounts/${account.id}`)}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
           >
             Account details
@@ -243,9 +303,7 @@ const AccountCard = ({ account, onCopy }) => {
 
           <button
             type="button"
-            onClick={() =>
-              navigate("/transactions")
-            }
+            onClick={() => navigate("/transactions")}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
           >
             Transactions
@@ -253,15 +311,13 @@ const AccountCard = ({ account, onCopy }) => {
           </button>
 
           <button
-  type="button"
-  onClick={() =>
-    navigate(`/accounts/${account.id}/statement`)
-  }
-  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
->
-  Statement
-  <ArrowDownToLine className="h-4 w-4" />
-</button>
+            type="button"
+            onClick={() => navigate(`/accounts/${account.id}/statement`)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            Statement
+            <ArrowDownToLine className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </article>
@@ -270,7 +326,7 @@ const AccountCard = ({ account, onCopy }) => {
 
 const Accounts = () => {
   const {
-    accounts,
+    accounts = [],
     loading,
     error,
     refresh,
@@ -300,7 +356,6 @@ const Accounts = () => {
     return (
       <main className="min-h-screen bg-slate-50">
         <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-
           <div className="mb-8">
             <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
 
@@ -313,7 +368,7 @@ const Accounts = () => {
             {Array.from({ length: 2 }).map((_, index) => (
               <div
                 key={index}
-                className="h-[430px] animate-pulse rounded-3xl bg-white shadow-sm"
+                className="h-[500px] animate-pulse rounded-3xl bg-white shadow-sm"
               />
             ))}
           </div>
@@ -325,11 +380,9 @@ const Accounts = () => {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-
         {/* Header */}
         <header className="mb-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-
             <div>
               <p className="text-sm font-medium text-slate-500">
                 TCSCU
@@ -340,7 +393,8 @@ const Accounts = () => {
               </h1>
 
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
-                View your balances, account details and banking activity.
+                View your total balance, available funds, ledger balance,
+                account details and banking activity.
               </p>
             </div>
 
@@ -416,8 +470,9 @@ const Accounts = () => {
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
               There are currently no bank accounts available on your
-              customer profile. Contact The Chaplaincy Savings and Credit Union (TCSCU) support if you believe
-              an account should be available.
+              customer profile. Contact The Chaplaincy Savings and Credit
+              Union (TCSCU) support if you believe an account should be
+              available.
             </p>
 
             <button
@@ -431,9 +486,67 @@ const Accounts = () => {
           </section>
         )}
 
+        {/* Account balance overview */}
+        {!error && accounts.length > 0 && (
+          <section className="mt-8">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-slate-950">
+                Balance information
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Understand how funds are divided within your accounts.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <BalanceCard
+                label="Total balance"
+                amount={accounts.reduce(
+                  (total, account) =>
+                    total + Number(account?.balance ?? 0),
+                  0
+                )}
+                currency={accounts[0]?.currency?.code || "USD"}
+                description="The complete value of your account funds."
+                icon={<Landmark className="h-5 w-5" />}
+              />
+
+              <BalanceCard
+                label="Available balance"
+                amount={accounts.reduce(
+                  (total, account) =>
+                    total + Number(account?.availableBalance ?? 0),
+                  0
+                )}
+                currency={accounts[0]?.currency?.code || "USD"}
+                description="Funds currently available for eligible transactions."
+                icon={<WalletCards className="h-5 w-5" />}
+              />
+
+              <BalanceCard
+                label="Ledger balance"
+                amount={accounts.reduce(
+                  (total, account) =>
+                    total + Number(account?.ledgerBalance ?? 0),
+                  0
+                )}
+                currency={accounts[0]?.currency?.code || "USD"}
+                description="Funds awaiting authorised release."
+                icon={<CreditCard className="h-5 w-5" />}
+              />
+            </div>
+
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              The overview totals are combined across your accounts. If
+              your accounts use different currencies, refer to each
+              individual account card for its correct currency balance.
+            </p>
+          </section>
+        )}
+
         {/* Security information */}
         <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
               <ShieldCheck className="h-5 w-5" />
@@ -444,8 +557,8 @@ const Accounts = () => {
             </h3>
 
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              Your account information is protected through your authenticated
-              The Chaplaincy Savings and Credit Union (TCSCU) session.
+              Your account information is protected through your
+              authenticated TCSCU session.
             </p>
           </div>
 
@@ -460,7 +573,8 @@ const Accounts = () => {
 
             <p className="mt-1 text-sm leading-6 text-slate-500">
               Available balances reflect funds currently available for
-              eligible banking operations.
+              eligible banking operations. Ledger funds cannot be spent
+              until they are released.
             </p>
           </div>
 
@@ -478,25 +592,22 @@ const Accounts = () => {
               from your banking dashboard.
             </p>
           </div>
-
         </section>
 
         {/* Footer */}
         <footer className="mt-10 border-t border-slate-200 pt-5">
           <div className="flex flex-col gap-2 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
             <p>
-              The Chaplaincy Savings and Credit Union (TCSCU) · Secure digital banking
+              The Chaplaincy Savings and Credit Union (TCSCU) · Secure
+              digital banking
             </p>
 
             <p>
               {accounts.length}{" "}
-              {accounts.length === 1
-                ? "account"
-                : "accounts"}
+              {accounts.length === 1 ? "account" : "accounts"}
             </p>
           </div>
         </footer>
-
       </div>
     </main>
   );

@@ -618,7 +618,6 @@ export const verifyTransferComplianceCode = async ({
     400,
   );
 };
-
 /*
  * ============================================================
  * RUN COMPLETE TRANSFER COMPLIANCE CHECK
@@ -996,7 +995,6 @@ export const createBankTransfer = async ({
               status,
               balance,
               "availableBalance",
-              "ledgerBalance",
               "minimumBalance"
             FROM "Account"
             WHERE id = ${accountId}
@@ -1067,11 +1065,6 @@ export const createBankTransfer = async ({
         const currentAvailableBalance =
           toDecimal(
             account.availableBalance,
-          );
-
-        const currentLedgerBalance =
-          toDecimal(
-            account.ledgerBalance,
           );
 
         const minimumBalance =
@@ -1148,10 +1141,6 @@ export const createBankTransfer = async ({
                   totalDebit,
                 ),
 
-              ledgerBalance:
-                currentLedgerBalance.sub(
-                  totalDebit,
-                ),
             },
           });
 
@@ -1660,8 +1649,7 @@ export const cancelBankTransfer =
               SELECT
                 id,
                 balance,
-                "availableBalance",
-                "ledgerBalance"
+                "availableBalance"
               FROM "Account"
               WHERE id = ${transfer.accountId}
                 AND "userId" = ${userId}
@@ -1688,11 +1676,6 @@ export const cancelBankTransfer =
               account.availableBalance,
             );
 
-          const ledgerBalance =
-            toDecimal(
-              account.ledgerBalance,
-            );
-
           const updatedBalance =
             balance.add(
               transfer.total,
@@ -1700,11 +1683,6 @@ export const cancelBankTransfer =
 
           const updatedAvailableBalance =
             availableBalance.add(
-              transfer.total,
-            );
-
-          const updatedLedgerBalance =
-            ledgerBalance.add(
               transfer.total,
             );
 
@@ -1721,8 +1699,6 @@ export const cancelBankTransfer =
               availableBalance:
                 updatedAvailableBalance,
 
-              ledgerBalance:
-                updatedLedgerBalance,
             },
           });
 
@@ -2191,8 +2167,7 @@ export const rejectBankTransfer =
               SELECT
                 id,
                 balance,
-                "availableBalance",
-                "ledgerBalance"
+                "availableBalance"
               FROM "Account"
               WHERE id = ${transfer.accountId}
                 AND "userId" = ${transfer.senderId}
@@ -2219,11 +2194,6 @@ export const rejectBankTransfer =
               account.availableBalance,
             );
 
-          const ledgerBalance =
-            toDecimal(
-              account.ledgerBalance,
-            );
-
           const restoredBalance =
             balance.add(
               transfer.total,
@@ -2231,11 +2201,6 @@ export const rejectBankTransfer =
 
           const restoredAvailableBalance =
             availableBalance.add(
-              transfer.total,
-            );
-
-          const restoredLedgerBalance =
-            ledgerBalance.add(
               transfer.total,
             );
 
@@ -2252,8 +2217,6 @@ export const rejectBankTransfer =
               availableBalance:
                 restoredAvailableBalance,
 
-              ledgerBalance:
-                restoredLedgerBalance,
             },
           });
 

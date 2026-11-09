@@ -12,8 +12,8 @@ CREATE TYPE "TransferOtpChannel" AS ENUM ('EMAIL', 'PHONE');
 -- the enum.
 
 
-ALTER TYPE "AccountType" ADD VALUE 'NON_RESIDENT';
-ALTER TYPE "AccountType" ADD VALUE 'DOMICILIARY';
+-- ALTER TYPE "AccountType" ADD VALUE 'NON_RESIDENT';
+-- ALTER TYPE "AccountType" ADD VALUE 'DOMICILIARY';
 
 -- AlterTable
 ALTER TABLE "Profile" ADD COLUMN     "residencyStatus" "ResidencyStatus";

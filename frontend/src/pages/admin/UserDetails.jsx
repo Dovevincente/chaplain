@@ -1,5 +1,5 @@
 ﻿
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Activity,
@@ -27,25 +27,30 @@ import {
 } from "lucide-react";
 import api from "../../services/api.js";
 
+const unwrapPayload = (payload) =>
+  payload?.data?.data ?? payload?.data ?? payload ?? {};
+
 const normalizeCustomer = (payload) => {
+  const root = unwrapPayload(payload);
   const source =
+    root?.customer ??
+    root?.user ??
     payload?.customer ??
     payload?.user ??
-    payload?.data?.customer ??
-    payload?.data?.user ??
-    payload?.data ??
-    payload ??
+    root ??
     {};
 
   return {
     ...source,
-    id: source?.id ?? source?.userId ?? "",
+    id: source?.id ?? source?.userId ?? source?.user_id ?? "",
     firstName: source?.firstName ?? source?.first_name ?? "",
     lastName: source?.lastName ?? source?.last_name ?? "",
-    email: source?.email ?? source?.emailAddress ?? "",
+    name: source?.name ?? source?.fullName ?? source?.displayName ?? "",
+    email: source?.email ?? source?.emailAddress ?? source?.email_address ?? "",
     phone:
       source?.phone ??
       source?.phoneNumber ??
+      source?.phone_number ??
       source?.mobile ??
       "",
     role: source?.role ?? "CUSTOMER",
@@ -56,6 +61,7 @@ const normalizeCustomer = (payload) => {
       "UNKNOWN",
     kycStatus:
       source?.kycStatus ??
+      source?.kyc_status ??
       source?.kyc?.status ??
       source?.verificationStatus ??
       "UNKNOWN",
@@ -64,23 +70,14 @@ const normalizeCustomer = (payload) => {
       source?.created_at ??
       source?.registeredAt ??
       null,
-    updatedAt:
-      source?.updatedAt ??
-      source?.updated_at ??
-      null,
+    updatedAt: source?.updatedAt ?? source?.updated_at ?? null,
     country:
       source?.country ??
       source?.countryCode ??
       source?.profile?.country ??
       "",
-    city:
-      source?.city ??
-      source?.profile?.city ??
-      "",
-    address:
-      source?.address ??
-      source?.profile?.address ??
-      "",
+    city: source?.city ?? source?.profile?.city ?? "",
+    address: source?.address ?? source?.profile?.address ?? "",
     dateOfBirth:
       source?.dateOfBirth ??
       source?.date_of_birth ??
@@ -98,27 +95,29 @@ const normalizeCustomer = (payload) => {
   };
 };
 
+const findArray = (source, keys) => {
+  if (Array.isArray(source)) return source;
+  for (const key of keys) {
+    if (Array.isArray(source?.[key])) return source[key];
+  }
+  return null;
+};
+
 const normalizeAccounts = (payload, customer) => {
-  const source = payload?.data ?? payload ?? {};
-
-  const accounts =
-    (Array.isArray(source?.accounts) && source.accounts) ||
-    (Array.isArray(source?.items) && source.items) ||
-    (Array.isArray(source) && source) ||
-    customer?.accounts ||
-    [];
-
-  return accounts;
+  const source = unwrapPayload(payload);
+  return (
+    findArray(source, ["accounts", "items", "results", "records"]) ??
+    findArray(source?.data, ["accounts", "items", "results", "records"]) ??
+    customer?.accounts ??
+    []
+  );
 };
 
 const normalizeTransactions = (payload) => {
-  const source = payload?.data ?? payload ?? {};
-
+  const source = unwrapPayload(payload);
   return (
-    (Array.isArray(source?.transactions) && source.transactions) ||
-    (Array.isArray(source?.items) && source.items) ||
-    (Array.isArray(source?.results) && source.results) ||
-    (Array.isArray(source) && source) ||
+    findArray(source, ["transactions", "items", "results", "records"]) ??
+    findArray(source?.data, ["transactions", "items", "results", "records"]) ??
     []
   );
 };
@@ -136,11 +135,14 @@ const normalizeTransaction = (transaction) => {
     id:
       transaction?.id ??
       transaction?.transactionId ??
+      transaction?.transaction_id ??
       transaction?.reference ??
+      transaction?.transactionReference ??
       "",
     reference:
       transaction?.reference ??
       transaction?.transactionReference ??
+      transaction?.transaction_reference ??
       "",
     type:
       transaction?.type ??
@@ -153,9 +155,11 @@ const normalizeTransaction = (transaction) => {
       "UNKNOWN",
     amount: Number.isFinite(amount) ? amount : 0,
     currency:
-      transaction?.currency?.code ??
+      (typeof transaction?.currency === "object"
+        ? transaction.currency?.code ?? transaction.currency?.isoCode
+        : transaction?.currency) ??
       transaction?.currencyCode ??
-      transaction?.currency ??
+      transaction?.currency_code ??
       "USD",
     description:
       transaction?.description ??
@@ -277,13 +281,19 @@ const getAccountBalance = (account) => {
     account?.ledgerBalance ??
     0;
 
-  return Number(value);
+  const normalized =
+    value && typeof value === "object"
+      ? value?.amount ?? value?.value ?? value?.toString?.()
+      : value;
+  return Number(normalized);
 };
 
 const getAccountCurrency = (account) =>
-  account?.currency?.code ??
+  (typeof account?.currency === "object"
+    ? account.currency?.code ?? account.currency?.isoCode
+    : account?.currency) ??
   account?.currencyCode ??
-  account?.currency ??
+  account?.currency_code ??
   "USD";
 
 const getStatusClass = (status) => {
@@ -361,6 +371,7 @@ const AdminUserDetails = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const requestSequence = useRef(0);
 
   const fetchCustomer = useCallback(
     async (isRefresh = false) => {
@@ -371,93 +382,92 @@ const AdminUserDetails = () => {
         return;
       }
 
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-
+      const requestId = ++requestSequence.current;
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
       setError("");
 
       try {
         const customerResponse = await api.get(
           `/admin/customers/${encodeURIComponent(userId)}`,
         );
+        if (requestId !== requestSequence.current) return;
 
-        const normalizedCustomer = normalizeCustomer(
-          customerResponse?.data,
-        );
-
+        const normalizedCustomer = normalizeCustomer(customerResponse?.data);
+        if (!normalizedCustomer.id) normalizedCustomer.id = userId;
         setCustomer(normalizedCustomer);
 
         const [accountsResponse, transactionsResponse] =
           await Promise.allSettled([
-            api.get(
-              `/admin/customers/${encodeURIComponent(userId)}/accounts`,
-            ),
+            api.get(`/admin/customers/${encodeURIComponent(userId)}/accounts`),
             api.get(
               `/admin/customers/${encodeURIComponent(userId)}/transactions`,
-              {
-                params: {
-                  limit: 10,
-                },
-              },
+              { params: { limit: 10 } },
             ),
           ]);
 
+        if (requestId !== requestSequence.current) return;
+
         if (accountsResponse.status === "fulfilled") {
           setAccounts(
-            normalizeAccounts(
-              accountsResponse.value?.data,
-              normalizedCustomer,
-            ),
+            normalizeAccounts(accountsResponse.value?.data, normalizedCustomer),
           );
-        } else {
+        } else if (!isRefresh || accounts.length === 0) {
           setAccounts(normalizedCustomer.accounts ?? []);
         }
 
         if (transactionsResponse.status === "fulfilled") {
           setTransactions(
-            normalizeTransactions(
-              transactionsResponse.value?.data,
-            ).map(normalizeTransaction),
-          );
-        } else {
-          setTransactions(
-            (normalizedCustomer.transactions ?? []).map(
+            normalizeTransactions(transactionsResponse.value?.data).map(
               normalizeTransaction,
             ),
           );
+        } else if (!isRefresh || transactions.length === 0) {
+          setTransactions(
+            (normalizedCustomer.transactions ?? []).map(normalizeTransaction),
+          );
+        }
+
+        if (
+          accountsResponse.status === "rejected" ||
+          transactionsResponse.status === "rejected"
+        ) {
+          const failed = [];
+          if (accountsResponse.status === "rejected") failed.push("accounts");
+          if (transactionsResponse.status === "rejected") failed.push("transactions");
+          setError(
+            `Customer profile loaded, but ${failed.join(" and ")} could not be refreshed.`,
+          );
         }
       } catch (requestError) {
-        const message =
+        if (requestId !== requestSequence.current) return;
+        setError(
           requestError?.response?.data?.message ||
-          requestError?.message ||
-          "Unable to load the customer profile.";
+            requestError?.response?.data?.error ||
+            requestError?.message ||
+            "Unable to load the customer profile.",
+        );
 
-        setError(message);
-        setCustomer(null);
-        setAccounts([]);
-        setTransactions([]);
+        // Preserve previously loaded information when a manual refresh fails.
+        if (!isRefresh) {
+          setCustomer(null);
+          setAccounts([]);
+          setTransactions([]);
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (requestId === requestSequence.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    [userId],
+    [userId, accounts.length, transactions.length],
   );
 
   useEffect(() => {
-    let cancelled = false;
-
-    Promise.resolve().then(() => {
-      if (!cancelled) {
-        fetchCustomer();
-      }
-    });
-
+    fetchCustomer();
     return () => {
-      cancelled = true;
+      requestSequence.current += 1;
     };
   }, [fetchCustomer]);
 

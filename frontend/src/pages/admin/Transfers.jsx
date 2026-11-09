@@ -1,8 +1,7 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
-  ArrowDownLeft,
   ArrowUpRight,
   Banknote,
   CheckCircle2,
@@ -39,33 +38,35 @@ const TYPE_OPTIONS = [
 
 const normalizeCollection = (payload) => {
   if (Array.isArray(payload)) {
-    return {
-      items: payload,
-      nextCursor: null,
-      total: payload.length,
-    };
+    return { items: payload, nextCursor: null, total: payload.length };
   }
 
   const source = payload?.data ?? payload ?? {};
+  const nested = source?.data ?? source;
+  const pagination = nested?.pagination ?? source?.pagination ?? {};
+  const meta = nested?.meta ?? source?.meta ?? {};
 
   const items =
-    (Array.isArray(source?.transfers) && source.transfers) ||
-    (Array.isArray(source?.items) && source.items) ||
-    (Array.isArray(source?.results) && source.results) ||
-    (Array.isArray(source?.records) && source.records) ||
+    (Array.isArray(nested?.transfers) && nested.transfers) ||
+    (Array.isArray(nested?.transactions) && nested.transactions) ||
+    (Array.isArray(nested?.items) && nested.items) ||
+    (Array.isArray(nested?.results) && nested.results) ||
+    (Array.isArray(nested?.records) && nested.records) ||
     [];
 
   return {
     items,
     nextCursor:
-      source?.nextCursor ??
-      source?.pagination?.nextCursor ??
-      source?.meta?.nextCursor ??
+      nested?.nextCursor ??
+      pagination?.nextCursor ??
+      meta?.nextCursor ??
+      pagination?.next_cursor ??
+      meta?.next_cursor ??
       null,
     total:
-      source?.total ??
-      source?.pagination?.total ??
-      source?.meta?.total ??
+      nested?.total ??
+      pagination?.total ??
+      meta?.total ??
       items.length,
   };
 };
@@ -149,12 +150,13 @@ const normalizeTransfer = (transfer) => {
     amount: Number.isFinite(amount) ? amount : 0,
     fee: Number.isFinite(fee) ? fee : 0,
 
-    currency:
+    currency: String(
       transfer?.currency?.code ??
-      transfer?.currencyCode ??
-      transfer?.currency ??
-      senderAccount?.currency?.code ??
-      "USD",
+        transfer?.currencyCode ??
+        (typeof transfer?.currency === "string" ? transfer.currency : "") ??
+        senderAccount?.currency?.code ??
+        "USD",
+    ).toUpperCase(),
 
     sender,
     receiver,
@@ -176,6 +178,37 @@ const normalizeTransfer = (transfer) => {
       transfer?.processedAt ??
       null,
   };
+};
+
+const getTransferKey = (transfer) =>
+  String(
+    transfer?.id ||
+      transfer?.reference ||
+      transfer?.transferReference ||
+      "",
+  ).trim();
+
+const mergeUniqueTransfers = (existing, incoming, reset = false) => {
+  const combined = reset ? incoming : [...existing, ...incoming];
+  const seen = new Set();
+
+  return combined.filter((transfer, index) => {
+    const key = getTransferKey(transfer);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const formatCurrencyTotals = (totals) => {
+  const entries = Object.entries(totals || {});
+  if (!entries.length) return "—";
+
+  return entries
+    .sort(([currencyA], [currencyB]) => currencyA.localeCompare(currencyB))
+    .map(([currency, amount]) => formatMoney(amount, currency))
+    .join(" · ");
 };
 
 const normalizeStatus = (value) =>
@@ -399,6 +432,7 @@ const AdminTransfers = () => {
   const [type, setType] = useState("ALL");
 
   const [nextCursor, setNextCursor] = useState(null);
+  const requestSequence = useRef(0);
 
   const fetchTransfers = useCallback(
     async ({
@@ -406,6 +440,8 @@ const AdminTransfers = () => {
       cursor = null,
       refresh = false,
     } = {}) => {
+      const requestId = ++requestSequence.current;
+
       if (refresh) {
         setRefreshing(true);
       } else if (reset) {
@@ -445,12 +481,15 @@ const AdminTransfers = () => {
 
         const mapped = normalized.items.map(normalizeTransfer);
 
-        setTransfers((current) =>
-          reset ? mapped : [...current, ...mapped],
-        );
+        if (requestId !== requestSequence.current) return;
 
+        setTransfers((current) =>
+          mergeUniqueTransfers(current, mapped, reset),
+        );
         setNextCursor(normalized.nextCursor);
       } catch (requestError) {
+        if (requestId !== requestSequence.current) return;
+
         const message =
           requestError?.response?.data?.message ||
           requestError?.message ||
@@ -458,14 +497,13 @@ const AdminTransfers = () => {
 
         setError(message);
 
-        if (reset) {
-          setTransfers([]);
-          setNextCursor(null);
-        }
+        // Keep the last successfully loaded records visible if refresh fails.
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        if (requestId === requestSequence.current) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
     [search, status, type],
@@ -510,15 +548,16 @@ const AdminTransfers = () => {
         normalizeType(transfer.type) === "INTERNATIONAL",
     ).length;
 
-    const totalVolume = transfers.reduce(
-      (total, transfer) => total + transfer.amount,
-      0,
-    );
+    const totalVolumeByCurrency = {};
+    const totalFeesByCurrency = {};
 
-    const totalFees = transfers.reduce(
-      (total, transfer) => total + transfer.fee,
-      0,
-    );
+    transfers.forEach((transfer) => {
+      const currency = String(transfer.currency || "USD").toUpperCase();
+      totalVolumeByCurrency[currency] =
+        (totalVolumeByCurrency[currency] || 0) + transfer.amount;
+      totalFeesByCurrency[currency] =
+        (totalFeesByCurrency[currency] || 0) + transfer.fee;
+    });
 
     return {
       total: transfers.length,
@@ -528,13 +567,15 @@ const AdminTransfers = () => {
       internal,
       bank,
       international,
-      totalVolume,
-      totalFees,
+      totalVolumeByCurrency,
+      totalFeesByCurrency,
     };
   }, [transfers]);
 
   const copyReference = async (reference) => {
-    if (!reference || !navigator?.clipboard) return;
+    if (!reference || typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
 
     try {
       await navigator.clipboard.writeText(String(reference));
@@ -614,15 +655,15 @@ const AdminTransfers = () => {
 
           <SummaryCard
             label="Transfer volume"
-            value={formatMoney(summary.totalVolume)}
-            description="Loaded transfer volume. Mixed currencies are not consolidated."
+            value={formatCurrencyTotals(summary.totalVolumeByCurrency)}
+            description="Loaded transfer volume, grouped by currency."
             icon={ArrowUpRight}
           />
 
           <SummaryCard
             label="Fees"
-            value={formatMoney(summary.totalFees)}
-            description="Loaded transfer fees. Mixed currencies are not consolidated."
+            value={formatCurrencyTotals(summary.totalFeesByCurrency)}
+            description="Loaded transfer fees, grouped by currency."
             icon={Banknote}
           />
         </section>
@@ -880,7 +921,7 @@ const AdminTransfers = () => {
                   </thead>
 
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {transfers.map((transfer) => {
+                    {transfers.map((transfer, index) => {
                       const senderName = getPersonName(
                         transfer.sender,
                         "Sender",
@@ -901,7 +942,7 @@ const AdminTransfers = () => {
 
                       return (
                         <tr
-                          key={transfer.id || transfer.reference}
+                          key={getTransferKey(transfer) || `transfer-${index}`}
                           className="transition hover:bg-slate-50 dark:hover:bg-slate-950/50"
                         >
                           <td className="px-5 py-4">
@@ -1029,7 +1070,7 @@ const AdminTransfers = () => {
               </div>
 
               <div className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
-                {transfers.map((transfer) => {
+                {transfers.map((transfer, index) => {
                   const senderAccount = getAccountNumber(
                     transfer.senderAccount,
                   );
@@ -1040,7 +1081,7 @@ const AdminTransfers = () => {
 
                   return (
                     <article
-                      key={transfer.id || transfer.reference}
+                      key={getTransferKey(transfer) || `transfer-mobile-${index}`}
                       className="p-4 sm:p-5"
                     >
                       <div className="flex items-start justify-between gap-4">

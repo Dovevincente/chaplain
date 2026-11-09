@@ -1,4 +1,3 @@
-
 import crypto from "crypto";
 
 import prisma from "../config/database.js";
@@ -49,8 +48,16 @@ const normalizePhone = (phone) => {
 const normalizeName = (value) =>
   String(value || "").trim();
 
+const normalizeOptionalText = (value) =>
+  String(value || "").trim() || null;
+
 const normalizeAccountType = (value) =>
   String(value || "").trim().toUpperCase();
+
+const normalizeCurrency = (value) =>
+  String(value || ACCOUNT.DEFAULT_CURRENCY)
+    .trim()
+    .toUpperCase();
 
 const ALLOWED_ACCOUNT_TYPES = new Set([
   "SAVINGS",
@@ -58,6 +65,7 @@ const ALLOWED_ACCOUNT_TYPES = new Set([
   "NON_RESIDENT",
   "DOMICILIARY",
   "BUSINESS",
+  "ESCROW",
 ]);
 
 const getRefreshExpiry = () =>
@@ -65,6 +73,34 @@ const getRefreshExpiry = () =>
     Date.now() +
       AUTH.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
   );
+
+/*
+ * ============================================================
+ * DATE OF BIRTH VALIDATION
+ * ============================================================
+ */
+
+const normalizeDateOfBirth = (value) => {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    throw createServiceError(
+      "Please provide a valid date of birth.",
+      400,
+    );
+  }
+
+  if (date >= new Date()) {
+    throw createServiceError(
+      "Date of birth must be in the past.",
+      400,
+    );
+  }
+
+  return date;
+};
 
 /*
  * ============================================================
@@ -126,34 +162,100 @@ export const registerUser = async ({
   email,
   phone,
   password,
+
+  // Personal information
   firstName,
+  middleName,
   lastName,
+  dateOfBirth,
+  nationality,
+
+  // Residential address
   country,
+  state,
+  stateProvince,
+  city,
+  address,
+  addressLine2,
+  postalCode,
+
+  // Account configuration
   accountType,
+  currency,
+
+  // Request metadata
   ipAddress,
   userAgent,
 }) => {
   const normalizedEmail = normalizeEmail(email);
   const normalizedPhone = normalizePhone(phone);
+
   const normalizedFirstName = normalizeName(firstName);
+  const normalizedMiddleName = normalizeOptionalText(middleName);
   const normalizedLastName = normalizeName(lastName);
-  const normalizedCountry = String(country || "").trim() || null;
-  const normalizedAccountType = normalizeAccountType(accountType);
+
+  const normalizedDateOfBirth =
+    normalizeDateOfBirth(dateOfBirth);
+
+  const normalizedNationality =
+    normalizeOptionalText(nationality);
+
+  const normalizedCountry =
+    normalizeOptionalText(country);
+
+  const normalizedState =
+    normalizeOptionalText(state || stateProvince);
+
+  const normalizedCity =
+    normalizeOptionalText(city);
+
+  const normalizedAddress =
+    normalizeOptionalText(address);
+
+  const normalizedAddressLine2 =
+    normalizeOptionalText(addressLine2);
+
+  const normalizedPostalCode =
+    normalizeOptionalText(postalCode);
+
+  const normalizedAccountType =
+    normalizeAccountType(accountType);
+
+  const normalizedCurrency =
+    normalizeCurrency(currency);
+
+  /*
+   * ----------------------------------------------------------
+   * REQUIRED FIELD VALIDATION
+   * ----------------------------------------------------------
+   */
 
   if (!normalizedEmail) {
-    throw createServiceError("Email address is required.", 400);
+    throw createServiceError(
+      "Email address is required.",
+      400,
+    );
   }
 
   if (!normalizedFirstName) {
-    throw createServiceError("First name is required.", 400);
+    throw createServiceError(
+      "First name is required.",
+      400,
+    );
   }
 
   if (!normalizedLastName) {
-    throw createServiceError("Last name is required.", 400);
+    throw createServiceError(
+      "Last name is required.",
+      400,
+    );
   }
 
   if (!password) {
-    throw createServiceError("Password is required.", 400);
+    throw createServiceError(
+      "Password is required.",
+      400,
+    );
   }
 
   if (String(password).length < 10) {
@@ -177,6 +279,19 @@ export const registerUser = async ({
     );
   }
 
+  if (!normalizedCurrency) {
+    throw createServiceError(
+      "Please select an account currency.",
+      400,
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * CHECK EXISTING EMAIL
+   * ----------------------------------------------------------
+   */
+
   const existingEmail = await prisma.user.findUnique({
     where: { email: normalizedEmail },
     select: { id: true },
@@ -188,6 +303,12 @@ export const registerUser = async ({
       409,
     );
   }
+
+  /*
+   * ----------------------------------------------------------
+   * CHECK EXISTING PHONE
+   * ----------------------------------------------------------
+   */
 
   if (normalizedPhone) {
     const existingPhone = await prisma.user.findUnique({
@@ -203,11 +324,23 @@ export const registerUser = async ({
     }
   }
 
+  /*
+   * ----------------------------------------------------------
+   * PASSWORD AND REFRESH TOKEN
+   * ----------------------------------------------------------
+   */
+
   const passwordHash = await hashPassword(password);
   const refreshToken = generateRefreshToken();
 
   try {
     const result = await prisma.$transaction(async (tx) => {
+      /*
+       * ------------------------------------------------------
+       * CREATE USER
+       * ------------------------------------------------------
+       */
+
       const user = await tx.user.create({
         data: {
           email: normalizedEmail,
@@ -218,12 +351,30 @@ export const registerUser = async ({
         },
       });
 
+      /*
+       * ------------------------------------------------------
+       * CREATE CUSTOMER PROFILE
+       * ------------------------------------------------------
+       */
+
       await tx.profile.create({
         data: {
           userId: user.id,
+
           firstName: normalizedFirstName,
+          middleName: normalizedMiddleName,
           lastName: normalizedLastName,
+
+          dateOfBirth: normalizedDateOfBirth,
+          nationality: normalizedNationality,
+
           country: normalizedCountry,
+          state: normalizedState,
+          city: normalizedCity,
+
+          address: normalizedAddress,
+          addressLine2: normalizedAddressLine2,
+          postalCode: normalizedPostalCode,
 
           // Record the customer's residency classification.
           residencyStatus:
@@ -233,6 +384,12 @@ export const registerUser = async ({
         },
       });
 
+      /*
+       * ------------------------------------------------------
+       * CREATE KYC RECORD
+       * ------------------------------------------------------
+       */
+
       await tx.kyc.create({
         data: {
           userId: user.id,
@@ -240,46 +397,97 @@ export const registerUser = async ({
         },
       });
 
-      const currency = await tx.currency.upsert({
-        where: { code: ACCOUNT.DEFAULT_CURRENCY },
-        update: {},
-        create: {
-          code: ACCOUNT.DEFAULT_CURRENCY,
-          name: "US Dollar",
-          symbol: "$",
-          decimals: 2,
-          isActive: true,
+      /*
+       * ------------------------------------------------------
+       * VALIDATE SELECTED CURRENCY
+       * ------------------------------------------------------
+       *
+       * The selected currency must already exist in the
+       * Currency table and must be active.
+       *
+       * Do not silently create unsupported currencies.
+       * ------------------------------------------------------
+       */
+
+      const selectedCurrency = await tx.currency.findUnique({
+        where: {
+          code: normalizedCurrency,
         },
       });
 
+      if (!selectedCurrency) {
+        throw createServiceError(
+          `The selected currency (${normalizedCurrency}) is not configured. Please select an available currency.`,
+          400,
+        );
+      }
+
+      if (!selectedCurrency.isActive) {
+        throw createServiceError(
+          `The selected currency (${normalizedCurrency}) is currently unavailable.`,
+          400,
+        );
+      }
+
+      /*
+       * ------------------------------------------------------
+       * GENERATE ACCOUNT NUMBER
+       * ------------------------------------------------------
+       */
+
       const accountNumber = await generateAccountNumber(tx);
+
+      /*
+       * ------------------------------------------------------
+       * CREATE BANK ACCOUNT
+       * ------------------------------------------------------
+       */
 
       const account = await tx.account.create({
         data: {
           accountNumber,
 
-          // Use the account type selected during registration.
+          // Account type selected during registration.
           type: normalizedAccountType,
 
           status: "ACTIVE",
           userId: user.id,
-          currencyId: currency.id,
+
+          // Use the selected currency.
+          currencyId: selectedCurrency.id,
+
           balance: 0,
           availableBalance: 0,
           ledgerBalance: 0,
         },
-        include: { currency: true },
+        include: {
+          currency: true,
+        },
       });
+
+      /*
+       * ------------------------------------------------------
+       * CREATE CUSTOMER WALLET
+       * ------------------------------------------------------
+       */
 
       const wallet = await tx.wallet.create({
         data: {
           userId: user.id,
-          currencyId: currency.id,
+          currencyId: selectedCurrency.id,
           type: "FIAT",
           balance: 0,
         },
-        include: { currency: true },
+        include: {
+          currency: true,
+        },
       });
+
+      /*
+       * ------------------------------------------------------
+       * CREATE INVESTMENT ACCOUNT
+       * ------------------------------------------------------
+       */
 
       await tx.investmentAccount.create({
         data: {
@@ -290,6 +498,12 @@ export const registerUser = async ({
         },
       });
 
+      /*
+       * ------------------------------------------------------
+       * CREATE REFRESH SESSION
+       * ------------------------------------------------------
+       */
+
       await createRefreshSession({
         tx,
         userId: user.id,
@@ -298,28 +512,46 @@ export const registerUser = async ({
         userAgent,
       });
 
+      /*
+       * ------------------------------------------------------
+       * CREATE AUDIT LOG
+       * ------------------------------------------------------
+       */
+
       await tx.auditLog.create({
         data: {
           userId: user.id,
           action: "CREATE",
           entity: "User",
           entityId: user.id,
-          description: `Customer account created with ${normalizedAccountType} account type`,
+          description:
+            `Customer account created with ${normalizedAccountType} account type and ${normalizedCurrency} currency`,
           ipAddress: ipAddress || null,
         },
       });
 
-      return { user, account, wallet };
+      return {
+        user,
+        account,
+        wallet,
+      };
     });
 
     return {
       accessToken: generateAccessToken(result.user),
       refreshToken,
+
       user: sanitizeUser(result.user),
       account: result.account,
       wallet: result.wallet,
     };
   } catch (error) {
+    /*
+     * --------------------------------------------------------
+     * PRISMA UNIQUE CONSTRAINT ERRORS
+     * --------------------------------------------------------
+     */
+
     if (error?.code === "P2002") {
       const target = Array.isArray(error.meta?.target)
         ? error.meta.target.map(String)
@@ -352,9 +584,14 @@ export const registerUser = async ({
       );
     }
 
-    if (error?.statusCode) throw error;
+    if (error?.statusCode) {
+      throw error;
+    }
 
-    console.error("registerUser transaction failed:", error);
+    console.error(
+      "registerUser transaction failed:",
+      error,
+    );
 
     throw createServiceError(
       "Unable to create your account right now. Please try again.",
@@ -378,11 +615,17 @@ export const loginUser = async ({
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail) {
-    throw createServiceError("Email address is required.", 400);
+    throw createServiceError(
+      "Email address is required.",
+      400,
+    );
   }
 
   if (!password) {
-    throw createServiceError("Password is required.", 400);
+    throw createServiceError(
+      "Password is required.",
+      400,
+    );
   }
 
   const user = await prisma.user.findUnique({
@@ -390,7 +633,10 @@ export const loginUser = async ({
   });
 
   if (!user) {
-    throw createServiceError("Invalid email or password.", 401);
+    throw createServiceError(
+      "Invalid email or password.",
+      401,
+    );
   }
 
   const passwordMatches = await comparePassword(
@@ -399,7 +645,10 @@ export const loginUser = async ({
   );
 
   if (!passwordMatches) {
-    throw createServiceError("Invalid email or password.", 401);
+    throw createServiceError(
+      "Invalid email or password.",
+      401,
+    );
   }
 
   if (user.status !== "ACTIVE") {
@@ -414,7 +663,9 @@ export const loginUser = async ({
   const result = await prisma.$transaction(async (tx) => {
     const updatedUser = await tx.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: {
+        lastLoginAt: new Date(),
+      },
     });
 
     await createRefreshSession({
@@ -454,23 +705,32 @@ export const loginUser = async ({
  * Atomically claims the existing session before issuing a
  * replacement token. Only one concurrent request can claim
  * the same active session.
+ *
  * ============================================================
  */
 
 export const refreshAccessToken = async (refreshToken) => {
   if (!refreshToken) {
-    throw createServiceError("Refresh token required.", 401);
+    throw createServiceError(
+      "Refresh token required.",
+      401,
+    );
   }
 
   const tokenHash = hashToken(refreshToken);
 
   const session = await prisma.securitySession.findUnique({
     where: { tokenHash },
-    include: { user: true },
+    include: {
+      user: true,
+    },
   });
 
   if (!session) {
-    throw createServiceError("Invalid refresh session.", 401);
+    throw createServiceError(
+      "Invalid refresh session.",
+      401,
+    );
   }
 
   if (session.revokedAt) {
@@ -488,7 +748,10 @@ export const refreshAccessToken = async (refreshToken) => {
   }
 
   if (session.user.status !== "ACTIVE") {
-    throw createServiceError("Account is not active.", 403);
+    throw createServiceError(
+      "Account is not active.",
+      403,
+    );
   }
 
   const newRefreshToken = generateRefreshToken();
@@ -503,7 +766,9 @@ export const refreshAccessToken = async (refreshToken) => {
         id: session.id,
         tokenHash,
         revokedAt: null,
-        expiresAt: { gt: now },
+        expiresAt: {
+          gt: now,
+        },
       },
       data: {
         revokedAt: now,

@@ -1,4 +1,11 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import {
   Activity,
   AlertTriangle,
@@ -8,13 +15,13 @@ import {
   ChevronRight,
   Clock3,
   Copy,
-  Download,
   Filter,
   RefreshCw,
   Search,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
+
 import { Link } from "react-router-dom";
 import api from "../../services/api.js";
 
@@ -39,6 +46,18 @@ const TYPE_OPTIONS = [
   "FEE",
   "INTEREST",
 ];
+
+const PAGE_SIZE = 25;
+
+const normalizeStatus = (value) =>
+  String(value ?? "UNKNOWN")
+    .trim()
+    .toUpperCase();
+
+const normalizeType = (value) =>
+  String(value ?? "UNKNOWN")
+    .trim()
+    .toUpperCase();
 
 const normalizeCollection = (payload) => {
   if (Array.isArray(payload)) {
@@ -73,9 +92,10 @@ const normalizeCollection = (payload) => {
   };
 };
 
-const normalizeTransaction = (transaction) => {
+const normalizeTransaction = (transaction = {}) => {
   const metadata =
-    transaction?.metadata && typeof transaction.metadata === "object"
+    transaction?.metadata &&
+    typeof transaction.metadata === "object"
       ? transaction.metadata
       : {};
 
@@ -110,48 +130,60 @@ const normalizeTransaction = (transaction) => {
 
   return {
     ...transaction,
+
     id:
       transaction?.id ??
       transaction?.transactionId ??
       transaction?.reference ??
       metadata?.transactionId ??
       "",
+
     reference:
       transaction?.reference ??
       transaction?.transactionReference ??
       metadata?.reference ??
       "",
+
     type:
       transaction?.type ??
       transaction?.transactionType ??
       transaction?.category ??
       "UNKNOWN",
+
     status:
       transaction?.status ??
       transaction?.transactionStatus ??
       "UNKNOWN",
+
     amount: Number.isFinite(amount) ? amount : 0,
     fee: Number.isFinite(fee) ? fee : 0,
+
     currency:
       transaction?.currency?.code ??
       transaction?.currencyCode ??
-      transaction?.currency ??
+      (typeof transaction?.currency === "string"
+        ? transaction.currency
+        : null) ??
       account?.currency?.code ??
       "USD",
+
     account,
     counterparty,
+
     customer:
       transaction?.customer ??
       transaction?.user ??
       transaction?.owner ??
       account?.user ??
       null,
+
     description:
       transaction?.description ??
       transaction?.narration ??
       transaction?.memo ??
       metadata?.description ??
       "Transaction",
+
     createdAt:
       transaction?.createdAt ??
       transaction?.created_at ??
@@ -159,34 +191,22 @@ const normalizeTransaction = (transaction) => {
       transaction?.transactionDate ??
       transaction?.processedAt ??
       null,
+
+    metadata,
   };
 };
 
-const normalizeStatus = (value) =>
-  String(value ?? "UNKNOWN")
-    .trim()
-    .toUpperCase();
-
-const normalizeType = (value) =>
-  String(value ?? "UNKNOWN")
-    .trim()
-    .toUpperCase();
-
 const isCreditType = (type) => {
-  const normalized = normalizeType(type);
-
   return [
     "CREDIT",
     "DEPOSIT",
     "INTEREST",
     "REFUND",
     "CASH_DEPOSIT",
-  ].includes(normalized);
+  ].includes(normalizeType(type));
 };
 
 const isDebitType = (type) => {
-  const normalized = normalizeType(type);
-
   return [
     "DEBIT",
     "WITHDRAWAL",
@@ -194,11 +214,12 @@ const isDebitType = (type) => {
     "FEE",
     "TRANSFER",
     "CASH_WITHDRAWAL",
-  ].includes(normalized);
+  ].includes(normalizeType(type));
 };
 
 const formatMoney = (amount, currency = "USD") => {
   const numericAmount = Number(amount);
+  const normalizedCurrency = String(currency || "USD").toUpperCase();
 
   if (!Number.isFinite(numericAmount)) {
     return "—";
@@ -207,14 +228,12 @@ const formatMoney = (amount, currency = "USD") => {
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: String(currency || "USD").toUpperCase(),
+      currency: normalizedCurrency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(numericAmount);
   } catch {
-    return `${String(currency || "USD").toUpperCase()} ${numericAmount.toFixed(
-      2,
-    )}`;
+    return `${normalizedCurrency} ${numericAmount.toFixed(2)}`;
   }
 };
 
@@ -312,6 +331,30 @@ const getTransactionId = (transaction) => {
   );
 };
 
+const getErrorMessage = (error, fallback) => {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
+};
+
+const mergeTransactions = (existing, incoming) => {
+  const transactionMap = new Map();
+
+  [...existing, ...incoming].forEach((transaction, index) => {
+    const identifier =
+      getTransactionId(transaction) ||
+      transaction?.reference ||
+      `transaction-${index}`;
+
+    transactionMap.set(String(identifier), transaction);
+  });
+
+  return Array.from(transactionMap.values());
+};
+
 const StatusBadge = ({ status }) => {
   const normalized = normalizeStatus(status);
 
@@ -321,26 +364,31 @@ const StatusBadge = ({ status }) => {
       className:
         "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300",
     },
+
     PROCESSING: {
       icon: Clock3,
       className:
         "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300",
     },
+
     PENDING: {
       icon: Clock3,
       className:
         "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300",
     },
+
     FAILED: {
       icon: XCircle,
       className:
         "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300",
     },
+
     REVERSED: {
       icon: AlertTriangle,
       className:
         "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300",
     },
+
     CANCELLED: {
       icon: XCircle,
       className:
@@ -420,9 +468,11 @@ const SummaryCard = ({ label, value, description, icon: Icon }) => (
 
 const AdminTransactions = () => {
   const [transactions, setTransactions] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState("");
 
@@ -431,9 +481,18 @@ const AdminTransactions = () => {
   const [type, setType] = useState("ALL");
 
   const [nextCursor, setNextCursor] = useState(null);
+  const [totalRecords, setTotalRecords] = useState(null);
+
+  const requestSequence = useRef(0);
 
   const fetchTransactions = useCallback(
-    async ({ reset = true, cursor = null, refresh = false } = {}) => {
+    async ({
+      reset = true,
+      cursor = null,
+      refresh = false,
+    } = {}) => {
+      const requestId = ++requestSequence.current;
+
       if (refresh) {
         setRefreshing(true);
       } else if (reset) {
@@ -446,7 +505,7 @@ const AdminTransactions = () => {
 
       try {
         const params = {
-          limit: 25,
+          limit: PAGE_SIZE,
         };
 
         if (search.trim()) {
@@ -469,30 +528,44 @@ const AdminTransactions = () => {
           params,
         });
 
+        // Ignore responses from older requests.
+        if (requestId !== requestSequence.current) {
+          return;
+        }
+
         const normalized = normalizeCollection(response?.data);
+
         const mapped = normalized.items.map(normalizeTransaction);
 
         setTransactions((current) =>
-          reset ? mapped : [...current, ...mapped],
+          reset ? mapped : mergeTransactions(current, mapped),
         );
 
         setNextCursor(normalized.nextCursor);
+        setTotalRecords(normalized.total);
       } catch (requestError) {
-        const message =
-          requestError?.response?.data?.message ||
-          requestError?.message ||
-          "Unable to load administrative transaction records.";
+        if (requestId !== requestSequence.current) {
+          return;
+        }
+
+        const message = getErrorMessage(
+          requestError,
+          "Unable to load administrative transaction records.",
+        );
 
         setError(message);
 
-        if (reset) {
-          setTransactions([]);
+        // Do not erase already loaded records when a refresh fails.
+        if (reset && !refresh) {
           setNextCursor(null);
+          setTotalRecords(null);
         }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        if (requestId === requestSequence.current) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
     [search, status, type],
@@ -500,15 +573,20 @@ const AdminTransactions = () => {
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      fetchTransactions({ reset: true });
-    }, 250);
+      fetchTransactions({
+        reset: true,
+      });
+    }, 300);
 
-    return () => window.clearTimeout(timeout);
+    return () => {
+      window.clearTimeout(timeout);
+    };
   }, [fetchTransactions]);
 
   const summary = useMemo(() => {
     const completed = transactions.filter(
-      (transaction) => normalizeStatus(transaction.status) === "COMPLETED",
+      (transaction) =>
+        normalizeStatus(transaction.status) === "COMPLETED",
     ).length;
 
     const pending = transactions.filter((transaction) =>
@@ -525,54 +603,49 @@ const AdminTransactions = () => {
 
     const credits = transactions.filter((transaction) =>
       isCreditType(transaction.type),
-    );
+    ).length;
 
     const debits = transactions.filter((transaction) =>
       isDebitType(transaction.type),
-    );
-
-    const creditTotal = credits.reduce(
-      (total, transaction) => total + transaction.amount,
-      0,
-    );
-
-    const debitTotal = debits.reduce(
-      (total, transaction) => total + transaction.amount,
-      0,
-    );
+    ).length;
 
     return {
       total: transactions.length,
       completed,
       pending,
       failed,
-      creditTotal,
-      debitTotal,
+      credits,
+      debits,
     };
   }, [transactions]);
 
   const copyReference = async (reference) => {
-    if (!reference || !navigator?.clipboard) return;
+    if (
+      !reference ||
+      typeof navigator === "undefined" ||
+      !navigator.clipboard
+    ) {
+      return;
+    }
 
     try {
       await navigator.clipboard.writeText(String(reference));
     } catch {
-      // Clipboard permissions may be unavailable in the current browser.
+      setError("Unable to copy the transaction reference.");
     }
   };
 
   const getBankTransferStatusOptions = (transaction) => {
-    const currentStatus = normalizeStatus(
-      transaction?.status,
-    );
+    const currentStatus = normalizeStatus(transaction?.status);
 
     const transferType = String(
       transaction?.metadata?.transferType || "",
     ).toUpperCase();
 
+    const transactionType = normalizeType(transaction?.type);
+
     const isBankTransfer =
-      String(transaction?.type || "").toUpperCase() ===
-        "TRANSFER" &&
+      transactionType === "TRANSFER" &&
       transferType === "BANK";
 
     if (!isBankTransfer) {
@@ -603,19 +676,21 @@ const AdminTransactions = () => {
     transaction,
     nextStatus,
   ) => {
-    const transactionId =
-      getTransactionId(transaction);
+    const transactionId = getTransactionId(transaction);
 
     if (!transactionId) {
+      setError("This transaction does not have a valid ID.");
       return;
     }
 
-    const currentStatus = normalizeStatus(
-      transaction.status,
-    );
+    if (updatingId) {
+      return;
+    }
+
+    const currentStatus = normalizeStatus(transaction.status);
 
     if (
-      ["COMPLETED", "FAILED", "CANCELLED"].includes(
+      ["COMPLETED", "FAILED", "CANCELLED", "REVERSED"].includes(
         currentStatus,
       )
     ) {
@@ -626,6 +701,7 @@ const AdminTransactions = () => {
       getBankTransferStatusOptions(transaction);
 
     if (!allowedStatuses.includes(nextStatus)) {
+      setError("This transaction cannot be updated to that status.");
       return;
     }
 
@@ -635,18 +711,18 @@ const AdminTransactions = () => {
       nextStatus === "FAILED" ||
       nextStatus === "CANCELLED"
     ) {
-      reason =
-        window.prompt(
-          `Enter the reason for marking this transfer ${nextStatus.toLowerCase()}:`,
-          "",
-        ) || "";
+      const enteredReason = window.prompt(
+        `Enter the reason for marking this transfer ${nextStatus.toLowerCase()}:`,
+        "",
+      );
 
-      if (!reason.trim()) {
+      if (enteredReason === null || !enteredReason.trim()) {
         return;
       }
+
+      reason = enteredReason.trim();
     } else {
-      reason =
-        "Administrative bank transfer status update.";
+      reason = "Administrative bank transfer status update.";
     }
 
     setUpdatingId(transactionId);
@@ -654,33 +730,32 @@ const AdminTransactions = () => {
 
     try {
       const response = await api.patch(
-        `/admin/transactions/${encodeURIComponent(
-          transactionId,
-        )}/status`,
+        `/admin/transactions/${encodeURIComponent(transactionId)}/status`,
         {
           status: nextStatus,
-          reason: reason.trim(),
+          reason,
         },
       );
 
       const responseTransaction =
-        response?.data?.data?.transaction ||
-        response?.data?.transaction ||
+        response?.data?.data?.transaction ??
+        response?.data?.transaction ??
+        response?.data?.data ??
         null;
 
       setTransactions((current) =>
         current.map((item) => {
-          const itemId =
-            getTransactionId(item);
+          const itemId = getTransactionId(item);
 
-          if (itemId !== transactionId) {
+          if (String(itemId) !== String(transactionId)) {
             return item;
           }
 
-          if (responseTransaction) {
-            return normalizeTransaction(
-              responseTransaction,
-            );
+          if (
+            responseTransaction &&
+            typeof responseTransaction === "object"
+          ) {
+            return normalizeTransaction(responseTransaction);
           }
 
           return {
@@ -688,16 +763,16 @@ const AdminTransactions = () => {
             status: nextStatus,
             metadata: {
               ...(item.metadata || {}),
+
               ...(nextStatus === "FAILED"
                 ? {
-                    failureReason:
-                      reason.trim(),
+                    failureReason: reason,
                   }
                 : {}),
+
               ...(nextStatus === "CANCELLED"
                 ? {
-                    cancellationReason:
-                      reason.trim(),
+                    cancellationReason: reason,
                   }
                 : {}),
             },
@@ -709,11 +784,10 @@ const AdminTransactions = () => {
         `Transaction ${nextStatus.toLowerCase()} successfully.`,
       );
     } catch (requestError) {
-      const message =
-        requestError?.response?.data?.message ||
-        requestError?.response?.data?.error ||
-        requestError?.message ||
-        "Unable to update the transaction status.";
+      const message = getErrorMessage(
+        requestError,
+        "Unable to update the transaction status.",
+      );
 
       setError(message);
       window.alert(message);
@@ -728,9 +802,17 @@ const AdminTransactions = () => {
     setType("ALL");
   };
 
+  const hasActiveFilters =
+    Boolean(search.trim()) ||
+    status !== "ALL" ||
+    type !== "ALL";
+
   return (
     <div className="min-h-full bg-slate-50 px-4 py-5 dark:bg-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
+
+        {/* PAGE HEADER */}
+
         <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-7">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-start gap-4">
@@ -744,7 +826,7 @@ const AdminTransactions = () => {
                 </h1>
 
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  Review transaction activity and financial records across the
+                  Review transaction activity and financial records across
                   The Chaplaincy Savings and Credit Union (TCSCU) platform.
                 </p>
               </div>
@@ -762,12 +844,17 @@ const AdminTransactions = () => {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <RefreshCw
-                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                className={`h-4 w-4 ${
+                  refreshing ? "animate-spin" : ""
+                }`}
               />
+
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </header>
+
+        {/* SUMMARY CARDS */}
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <SummaryCard
@@ -792,19 +879,21 @@ const AdminTransactions = () => {
           />
 
           <SummaryCard
-            label="Credits"
-            value={formatMoney(summary.creditTotal)}
-            description="Credit-side volume across loaded records."
+            label="Credit transactions"
+            value={summary.credits.toLocaleString()}
+            description="Loaded transactions classified as credits."
             icon={ArrowDownLeft}
           />
 
           <SummaryCard
-            label="Debits"
-            value={formatMoney(summary.debitTotal)}
-            description="Debit-side volume across loaded records."
+            label="Debit transactions"
+            value={summary.debits.toLocaleString()}
+            description="Loaded transactions classified as debits."
             icon={ArrowUpRight}
           />
         </section>
+
+        {/* FILTERS */}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
@@ -823,7 +912,9 @@ const AdminTransactions = () => {
                   id="admin-transaction-search"
                   type="search"
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) =>
+                    setSearch(event.target.value)
+                  }
                   placeholder="Reference, customer, account or description..."
                   className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
@@ -841,7 +932,9 @@ const AdminTransactions = () => {
               <select
                 id="admin-transaction-status"
                 value={status}
-                onChange={(event) => setStatus(event.target.value)}
+                onChange={(event) =>
+                  setStatus(event.target.value)
+                }
                 className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
               >
                 {STATUS_OPTIONS.map((option) => (
@@ -865,7 +958,9 @@ const AdminTransactions = () => {
               <select
                 id="admin-transaction-type"
                 value={type}
-                onChange={(event) => setType(event.target.value)}
+                onChange={(event) =>
+                  setType(event.target.value)
+                }
                 className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
               >
                 {TYPE_OPTIONS.map((option) => (
@@ -881,7 +976,8 @@ const AdminTransactions = () => {
             <button
               type="button"
               onClick={clearFilters}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              disabled={!hasActiveFilters}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <Filter className="h-4 w-4" />
               Clear
@@ -889,23 +985,30 @@ const AdminTransactions = () => {
           </div>
         </section>
 
+        {/* ERROR MESSAGE */}
+
         {error && (
           <section className="rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/20">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
 
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-red-800 dark:text-red-300">
-                  Transaction records could not be loaded
+                  Transaction request failed
                 </h2>
 
-                <p className="mt-1 text-sm leading-6 text-red-700 dark:text-red-400">
+                <p className="mt-1 break-words text-sm leading-6 text-red-700 dark:text-red-400">
                   {error}
                 </p>
 
                 <button
                   type="button"
-                  onClick={() => fetchTransactions({ reset: true })}
+                  onClick={() =>
+                    fetchTransactions({
+                      reset: true,
+                      refresh: true,
+                    })
+                  }
                   className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -916,6 +1019,8 @@ const AdminTransactions = () => {
           </section>
         )}
 
+        {/* TRANSACTION TABLE */}
+
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-2 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
             <div>
@@ -925,6 +1030,12 @@ const AdminTransactions = () => {
 
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 Financial records returned by the authenticated admin API.
+                {totalRecords !== null && (
+                  <span className="ml-1">
+                    Total matching records:{" "}
+                    {Number(totalRecords).toLocaleString()}.
+                  </span>
+                )}
               </p>
             </div>
 
@@ -956,7 +1067,7 @@ const AdminTransactions = () => {
                 criteria.
               </p>
 
-              {(search || status !== "ALL" || type !== "ALL") && (
+              {hasActiveFilters && (
                 <button
                   type="button"
                   onClick={clearFilters}
@@ -968,6 +1079,8 @@ const AdminTransactions = () => {
             </div>
           ) : (
             <>
+              {/* DESKTOP TABLE */}
+
               <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full min-w-[1100px]">
                   <thead className="bg-slate-50 dark:bg-slate-950/60">
@@ -975,21 +1088,27 @@ const AdminTransactions = () => {
                       <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Transaction
                       </th>
+
                       <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Customer
                       </th>
+
                       <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Type
                       </th>
+
                       <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Amount
                       </th>
+
                       <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Status
                       </th>
+
                       <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Date
                       </th>
+
                       <th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Action
                       </th>
@@ -997,17 +1116,25 @@ const AdminTransactions = () => {
                   </thead>
 
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {transactions.map((transaction) => {
+                    {transactions.map((transaction, index) => {
                       const id = getTransactionId(transaction);
-                      const customerName = getCustomerName(transaction);
-                      const customerEmail = getCustomerEmail(transaction);
-                      const accountNumber = getAccountNumber(
-                        transaction.account,
-                      );
+
+                      const customerName =
+                        getCustomerName(transaction);
+
+                      const customerEmail =
+                        getCustomerEmail(transaction);
+
+                      const accountNumber =
+                        getAccountNumber(transaction.account);
 
                       return (
                         <tr
-                          key={id || transaction.reference}
+                          key={
+                            id ||
+                            transaction.reference ||
+                            `desktop-transaction-${index}`
+                          }
                           className="transition hover:bg-slate-50 dark:hover:bg-slate-950/50"
                         >
                           <td className="px-5 py-4">
@@ -1018,16 +1145,21 @@ const AdminTransactions = () => {
 
                               <div className="mt-1 flex items-center gap-2">
                                 <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                                  {transaction.reference || id || "No reference"}
+                                  {transaction.reference ||
+                                    id ||
+                                    "No reference"}
                                 </p>
 
                                 {transaction.reference && (
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      copyReference(transaction.reference)
+                                      copyReference(
+                                        transaction.reference,
+                                      )
                                     }
                                     aria-label="Copy transaction reference"
+                                    title="Copy reference"
                                     className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                                   >
                                     <Copy className="h-3.5 w-3.5" />
@@ -1072,7 +1204,9 @@ const AdminTransactions = () => {
                                       : "text-slate-900 dark:text-white"
                                 }`}
                               >
-                                {isCreditType(transaction.type) ? "+" : ""}
+                                {isCreditType(transaction.type)
+                                  ? "+"
+                                  : ""}
                                 {formatMoney(
                                   transaction.amount,
                                   transaction.currency,
@@ -1092,7 +1226,9 @@ const AdminTransactions = () => {
                           </td>
 
                           <td className="px-5 py-4">
-                            <StatusBadge status={transaction.status} />
+                            <StatusBadge
+                              status={transaction.status}
+                            />
                           </td>
 
                           <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-300">
@@ -1103,15 +1239,21 @@ const AdminTransactions = () => {
                             <div className="flex flex-col items-end gap-2">
                               {(() => {
                                 const statusOptions =
-                                  getBankTransferStatusOptions(transaction);
+                                  getBankTransferStatusOptions(
+                                    transaction,
+                                  );
 
                                 if (statusOptions.length > 0 && id) {
                                   return (
                                     <select
                                       value=""
-                                      disabled={updatingId === id}
+                                      disabled={
+                                        updatingId === id ||
+                                        Boolean(updatingId)
+                                      }
                                       onChange={(event) => {
-                                        const nextStatus = event.target.value;
+                                        const nextStatus =
+                                          event.target.value;
 
                                         if (!nextStatus) return;
 
@@ -1167,14 +1309,23 @@ const AdminTransactions = () => {
                 </table>
               </div>
 
+              {/* MOBILE TRANSACTION CARDS */}
+
               <div className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
-                {transactions.map((transaction) => {
+                {transactions.map((transaction, index) => {
                   const id = getTransactionId(transaction);
-                  const accountNumber = getAccountNumber(transaction.account);
+
+                  const accountNumber = getAccountNumber(
+                    transaction.account,
+                  );
 
                   return (
                     <article
-                      key={id || transaction.reference}
+                      key={
+                        id ||
+                        transaction.reference ||
+                        `mobile-transaction-${index}`
+                      }
                       className="p-4 sm:p-5"
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -1206,6 +1357,12 @@ const AdminTransactions = () => {
                               {maskAccountNumber(accountNumber)}
                             </p>
                           )}
+
+                          {getCustomerEmail(transaction) && (
+                            <p className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
+                              {getCustomerEmail(transaction)}
+                            </p>
+                          )}
                         </div>
 
                         <div className="text-right">
@@ -1228,6 +1385,16 @@ const AdminTransactions = () => {
                               transaction.currency,
                             )}
                           </p>
+
+                          {transaction.fee > 0 && (
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              Fee:{" "}
+                              {formatMoney(
+                                transaction.fee,
+                                transaction.currency,
+                              )}
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -1258,7 +1425,9 @@ const AdminTransactions = () => {
 
                           {id && (
                             <Link
-                              to={`/admin/transactions/${encodeURIComponent(id)}`}
+                              to={`/admin/transactions/${encodeURIComponent(
+                                id,
+                              )}`}
                               className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
                             >
                               Review
@@ -1278,9 +1447,13 @@ const AdminTransactions = () => {
                           return (
                             <select
                               value=""
-                              disabled={updatingId === id}
+                              disabled={
+                                updatingId === id ||
+                                Boolean(updatingId)
+                              }
                               onChange={(event) => {
-                                const nextStatus = event.target.value;
+                                const nextStatus =
+                                  event.target.value;
 
                                 if (!nextStatus) return;
 
@@ -1314,6 +1487,8 @@ const AdminTransactions = () => {
                 })}
               </div>
 
+              {/* PAGINATION */}
+
               {nextCursor && (
                 <div className="border-t border-slate-200 p-5 text-center dark:border-slate-800">
                   <button
@@ -1324,7 +1499,7 @@ const AdminTransactions = () => {
                         cursor: nextCursor,
                       })
                     }
-                    disabled={loadingMore}
+                    disabled={loadingMore || refreshing}
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                   >
                     <RefreshCw
@@ -1332,6 +1507,7 @@ const AdminTransactions = () => {
                         loadingMore ? "animate-spin" : ""
                       }`}
                     />
+
                     {loadingMore ? "Loading..." : "Load more"}
                   </button>
                 </div>
@@ -1339,6 +1515,8 @@ const AdminTransactions = () => {
             </>
           )}
         </section>
+
+        {/* SECURITY INFORMATION */}
 
         <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 dark:border-blue-900/60 dark:bg-blue-950/20">
           <div className="flex items-start gap-3">
@@ -1350,18 +1528,21 @@ const AdminTransactions = () => {
               </h2>
 
               <p className="mt-1 text-sm leading-6 text-blue-800 dark:text-blue-300">
-                Transaction records are displayed from the authenticated admin
-                API. Account numbers are masked in the interface and sensitive
-                payment credentials should never be exposed through this page.
+                Transaction records are displayed from the authenticated
+                TCSCU admin API. Account numbers are masked in the
+                interface. Sensitive payment credentials and private
+                authentication data should never be exposed through this page.
               </p>
             </div>
           </div>
         </section>
 
+        {/* AUDIT LOGS LINK */}
+
         <div className="flex justify-end">
           <Link
             to="/admin/audit-logs"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 transition hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
           >
             Review administrative audit logs
             <ChevronRight className="h-4 w-4" />
@@ -1373,5 +1554,3 @@ const AdminTransactions = () => {
 };
 
 export default AdminTransactions;
-
-

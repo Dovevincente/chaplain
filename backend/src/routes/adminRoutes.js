@@ -10,6 +10,7 @@ import {
   updateAccountStatus,
   creditCustomerAccount,
   debitCustomerAccount,
+  releaseCustomerLedgerBalance,
   getCustomerTransactions,
   createCustomer,
   getAdminTransactions,
@@ -70,25 +71,14 @@ const router = express.Router();
 |--------------------------------------------------------------------------
 */
 
-router.use(
-  adminRateLimiter,
-);
-
-router.use(
-  authenticate,
-);
-
-router.use(
-  requireAdmin,
-);
+router.use(adminRateLimiter);
+router.use(authenticate);
+router.use(requireAdmin);
 
 /*
 |--------------------------------------------------------------------------
 | SYSTEM SETTINGS
 |--------------------------------------------------------------------------
-|
-| GET /api/admin/settings
-|
 */
 
 router.get(
@@ -97,56 +87,22 @@ router.get(
     try {
       return res.status(200).json({
         success: true,
-
         settings: {
-          environment:
-            process.env.NODE_ENV ||
-            "development",
-
+          environment: process.env.NODE_ENV || "development",
           apiStatus: "Running",
-
-          databaseStatus:
-            "Connected",
-
-          realtimeStatus:
-            "Running",
-
-          maintenanceMode:
-            false,
-
-          registrationEnabled:
-            true,
-
-          transfersEnabled:
-            true,
-
-          withdrawalsEnabled:
-            true,
-
-          depositsEnabled:
-            true,
-
-          kycRequired:
-            true,
-
-          version:
-            process.env.APP_VERSION ||
-            "1.0.0",
-
-          apiVersion:
-            process.env.API_VERSION ||
-            "v1",
-
-          timezone:
-            process.env.TZ ||
-            "UTC",
-
-          currency:
-            process.env.DEFAULT_CURRENCY ||
-            "USD",
-
-          lastUpdated:
-            new Date().toISOString(),
+          databaseStatus: "Connected",
+          realtimeStatus: "Running",
+          maintenanceMode: false,
+          registrationEnabled: true,
+          transfersEnabled: true,
+          withdrawalsEnabled: true,
+          depositsEnabled: true,
+          kycRequired: true,
+          version: process.env.APP_VERSION || "1.0.0",
+          apiVersion: process.env.API_VERSION || "v1",
+          timezone: process.env.TZ || "UTC",
+          currency: process.env.DEFAULT_CURRENCY || "USD",
+          lastUpdated: new Date().toISOString(),
         },
       });
     } catch (error) {
@@ -159,13 +115,6 @@ router.get(
 |--------------------------------------------------------------------------
 | TRANSFER COMPLIANCE & DEBIT ALERT SETTINGS
 |--------------------------------------------------------------------------
-|
-| GET:
-|   /api/admin/compliance/settings
-|
-| PUT:
-|   /api/admin/compliance/settings
-|
 */
 
 router.get(
@@ -256,6 +205,17 @@ router.patch(
 |--------------------------------------------------------------------------
 | ACCOUNT FINANCIAL OPERATIONS
 |--------------------------------------------------------------------------
+|
+| CREDIT:
+| POST /api/admin/customers/:userId/accounts/:accountId/credit
+|
+| DEBIT:
+| POST /api/admin/customers/:userId/accounts/:accountId/debit
+|
+| RELEASE LEDGER BALANCE:
+| POST /api/admin/customers/:userId/accounts/:accountId/release-ledger
+|
+|--------------------------------------------------------------------------
 */
 
 router.post(
@@ -266,6 +226,11 @@ router.post(
 router.post(
   "/customers/:userId/accounts/:accountId/debit",
   debitCustomerAccount,
+);
+
+router.post(
+  "/customers/:userId/accounts/:accountId/release-ledger",
+  releaseCustomerLedgerBalance,
 );
 
 /*
@@ -299,21 +264,6 @@ router.patch(
 |--------------------------------------------------------------------------
 | ADMIN TRANSFERS
 |--------------------------------------------------------------------------
-|
-| GET:
-|   /api/admin/transfers
-|
-| GET:
-|   /api/admin/transfers/:transferId
-|
-| PATCH:
-|   /api/admin/transfers/:transferId/status
-|
-| IMPORTANT:
-| These routes must be registered before any future
-| generic /:transferId routes.
-|
-|--------------------------------------------------------------------------
 */
 
 router.get(
@@ -335,10 +285,6 @@ router.patch(
 |--------------------------------------------------------------------------
 | ADMIN LOANS
 |--------------------------------------------------------------------------
-|
-| GET:
-|   /api/admin/loans
-|
 */
 
 router.get(
@@ -350,28 +296,7 @@ router.get(
 |--------------------------------------------------------------------------
 | INVESTMENTS
 |--------------------------------------------------------------------------
-|
-| GET:
-|   /api/admin/investments
-|   /api/admin/investments/:investmentId
-|
-| REVIEW:
-|   PATCH /api/admin/investments/:investmentId/review
-|
-| VERIFY:
-|   POST /api/admin/investments/:investmentId/verify
-|
-| REJECT:
-|   POST /api/admin/investments/:investmentId/reject
-|
-|--------------------------------------------------------------------------
 */
-
-/*
- * BTC configuration routes must come BEFORE
- * /:investmentId so "btc" is not interpreted
- * as an investment ID.
- */
 
 router.get(
   "/investments/btc/payment-config",

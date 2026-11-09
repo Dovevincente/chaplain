@@ -2102,614 +2102,595 @@ export const updateAccountStatus =
 // ============================================================
 // CREDIT CUSTOMER ACCOUNT
 // ============================================================
+// Admin credits funds into the customer's Ledger Balance.
+//
+// IMPORTANT:
+// - balance increases
+// - ledgerBalance increases
+// - availableBalance remains unchanged
+//
+// The customer cannot spend the credited funds until an
+// administrator releases them.
+// ============================================================
 
-export const creditCustomerAccount =
-  async (
-    req,
-    res,
-    next,
-  ) => {
-    try {
-      const customerId =
-        assertRequired(
-          req.params.userId,
-          "Customer ID",
+
+export const creditCustomerAccount = async (req, res, next) => {
+  try {
+    const customerId = assertRequired(req.params.userId, "Customer ID");
+    const accountId = assertRequired(req.params.accountId, "Account ID");
+    const amount = assertPositiveAmount(req.body?.amount);
+
+    const description =
+      normalizeString(req.body?.description) ||
+      "Administrative account credit";
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const account = await assertCustomerOwnsAccount(
+          tx,
+          customerId,
+          accountId,
         );
 
-      const accountId =
-        assertRequired(
-          req.params.accountId,
-          "Account ID",
-        );
+        if (account.status !== "ACTIVE") {
+          const error = new Error(
+            `Cannot credit an account with status ${account.status}.`,
+          );
+          error.statusCode = 400;
+          throw error;
+        }
 
-      const amount =
-        assertPositiveAmount(
-          req.body?.amount,
-        );
+        const balanceBefore = toDecimal(account.balance);
+        const availableBefore = toDecimal(account.availableBalance);
+        const ledgerBefore = toDecimal(account.ledgerBalance);
 
-      const description =
-        normalizeString(
-          req.body?.description,
-        ) ||
-        "Administrative account credit";
+        // Admin credit increases total balance.
+        const balanceAfter = balanceBefore.add(amount);
 
-      const result =
-        await prisma.$transaction(
-          async (tx) => {
-            const account =
-              await assertCustomerOwnsAccount(
-                tx,
-                customerId,
-                accountId,
-              );
+        // Newly credited funds remain unavailable.
+        const availableAfter = availableBefore;
 
-            if (
-              account.status !==
-              "ACTIVE"
-            ) {
-              const error =
-                new Error(
-                  `Cannot credit an account with status ${account.status}.`,
-                );
+        // Credit goes into ledger balance.
+        const ledgerAfter = ledgerBefore.add(amount);
 
-              error.statusCode =
-                400;
+        const reference = await generateReference("ADJ");
 
-              throw error;
-            }
-
-            const balanceBefore =
-              toDecimal(
-                account.balance,
-              );
-
-            const balanceAfter =
-              balanceBefore.add(
-                amount,
-              );
-
-            const availableBefore =
-              toDecimal(
-                account.availableBalance,
-              );
-
-            const availableAfter =
-              availableBefore.add(
-                amount,
-              );
-
-            const ledgerBefore =
-              toDecimal(
-                account.ledgerBalance,
-              );
-
-            const ledgerAfter =
-              ledgerBefore.add(
-                amount,
-              );
-
-            const reference =
-              await generateReference(
-                "ADJ",
-              );
-
-            const transaction =
-              await tx.transaction.create({
-                data: {
-                  reference,
-
-                  userId:
-                    customerId,
-
-                  accountId:
-                    accountId,
-
-                  currencyId:
-                    account.currencyId,
-
-                  type:
-                    "ADJUSTMENT",
-
-                  status:
-                    "COMPLETED",
-
-                  amount,
-
-                  fee:
-                    toDecimal(0),
-
-                  total:
-                    amount,
-
-                  description,
-
-                  metadata: {
-                    operation:
-                      "ADMIN_CREDIT",
-
-                    adminId:
-                      req.user.id,
-                  },
-                },
-
-                include: {
-                  account: {
-                    select: {
-                      id: true,
-
-                      accountNumber:
-                        true,
-                    },
-                  },
-
-                  currency:
-                    true,
-                },
-              });
-
-            const updatedAccount =
-              await tx.account.update({
-                where: {
-                  id:
-                    accountId,
-                },
-
-                data: {
-                  balance:
-                    balanceAfter,
-
-                  availableBalance:
-                    availableAfter,
-
-                  ledgerBalance:
-                    ledgerAfter,
-                },
-
-                include: {
-                  currency:
-                    true,
-                },
-              });
-
-            await tx.ledgerEntry.create({
-              data: {
-                accountId:
-                  accountId,
-
-                transactionId:
-                  transaction.id,
-
-                type:
-                  "CREDIT",
-
-                amount,
-
-                balanceBefore,
-
-                balanceAfter,
-
-                description,
-              },
-            });
-
-            await createAuditLog({
-              tx,
-
-              adminId:
-                req.user.id,
-
-              userId:
-                customerId,
-
-              action:
-                "DEPOSIT",
-
-              entity:
-                "Account",
-
-              entityId:
-                accountId,
-
-              description:
-                `Administrator credited ${amount.toString()} ${account.currency?.code || ""} to account ${account.accountNumber}.`,
-
-              metadata: {
-                operation:
-                  "ADMIN_CREDIT",
-
-                transactionId:
-                  transaction.id,
-
-                reference,
-
-                amount:
-                  amount.toString(),
-
-                accountNumber:
-                  account.accountNumber,
-              },
-
-              ipAddress:
-                req.ip,
-            });
-
-            return {
-              transaction,
-
-              account:
-                updatedAccount,
-
-              balanceBefore,
-
-              balanceAfter,
-            };
+        const transaction = await tx.transaction.create({
+          data: {
+            reference,
+            userId: customerId,
+            accountId,
+            currencyId: account.currencyId,
+            type: "ADJUSTMENT",
+            status: "COMPLETED",
+            amount,
+            fee: toDecimal(0),
+            total: amount,
+            description,
+            metadata: {
+              operation: "ADMIN_CREDIT",
+              adminId: req.user.id,
+              availableBalanceChanged: false,
+            },
           },
-        );
+          include: {
+            account: {
+              select: {
+                id: true,
+                accountNumber: true,
+              },
+            },
+            currency: true,
+          },
+        });
 
-      return res.status(200).json({
-        success: true,
+        const updatedAccount = await tx.account.update({
+          where: { id: accountId },
+          data: {
+            balance: balanceAfter,
+            availableBalance: availableAfter,
+            ledgerBalance: ledgerAfter,
+          },
+          include: { currency: true },
+        });
 
-        message:
-          "Customer account credited successfully.",
+        await tx.ledgerEntry.create({
+          data: {
+            accountId,
+            transactionId: transaction.id,
+            type: "CREDIT",
+            amount,
+            balanceBefore,
+            balanceAfter,
+            description,
+          },
+        });
 
-        data: {
-          transaction:
-            serializeTransaction(
-              result.transaction,
-            ),
+        await createAuditLog({
+          tx,
+          adminId: req.user.id,
+          userId: customerId,
+          action: "DEPOSIT",
+          entity: "Account",
+          entityId: accountId,
+          description: `Administrator credited ${amount.toString()} ${account.currency?.code || ""} to the ledger balance of account ${account.accountNumber}.`,
+          metadata: {
+            operation: "ADMIN_CREDIT",
+            transactionId: transaction.id,
+            reference,
+            amount: amount.toString(),
+            accountNumber: account.accountNumber,
+            balances: {
+              totalBefore: balanceBefore.toString(),
+              totalAfter: balanceAfter.toString(),
+              availableBefore: availableBefore.toString(),
+              availableAfter: availableAfter.toString(),
+              ledgerBefore: ledgerBefore.toString(),
+              ledgerAfter: ledgerAfter.toString(),
+            },
+          },
+          ipAddress: req.ip,
+        });
 
-          account:
-            serializeAccount(
-              result.account,
-            ),
+        return {
+          transaction,
+          account: updatedAccount,
+          balanceBefore,
+          balanceAfter,
+          availableBefore,
+          availableAfter,
+          ledgerBefore,
+          ledgerAfter,
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
 
-          balance: {
-            before:
-              serializeMoney(
-                result.balanceBefore,
-              ),
-
-            after:
-              serializeMoney(
-                result.balanceAfter,
-              ),
+    return res.status(200).json({
+      success: true,
+      message:
+        "Customer account credited successfully. Funds have been added to ledger balance and are awaiting administrative release.",
+      data: {
+        transaction: serializeTransaction(result.transaction),
+        account: serializeAccount(result.account),
+        balances: {
+          total: {
+            before: serializeMoney(result.balanceBefore),
+            after: serializeMoney(result.balanceAfter),
+          },
+          available: {
+            before: serializeMoney(result.availableBefore),
+            after: serializeMoney(result.availableAfter),
+          },
+          ledger: {
+            before: serializeMoney(result.ledgerBefore),
+            after: serializeMoney(result.ledgerAfter),
           },
         },
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// ============================================================
+// RELEASE CUSTOMER LEDGER BALANCE
+// ============================================================
+// Moves funds from Ledger Balance to Available Balance.
+//
+// IMPORTANT:
+// - balance remains unchanged
+// - ledgerBalance decreases
+// - availableBalance increases
+// - customers cannot call this endpoint themselves
+// - only authenticated administrators can release funds
+// ============================================================
+
+
+export const releaseCustomerLedgerBalance = async (req, res, next) => {
+  try {
+    const customerId = assertRequired(req.params.userId, "Customer ID");
+    const accountId = assertRequired(req.params.accountId, "Account ID");
+    const amount = assertPositiveAmount(req.body?.amount);
+
+    const description =
+      normalizeString(req.body?.description) ||
+      "Administrative ledger balance release";
+
+    const adminId = req.user.id;
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const account = await assertCustomerOwnsAccount(
+          tx,
+          customerId,
+          accountId,
+        );
+
+        if (account.status !== "ACTIVE") {
+          const error = new Error(
+            `Cannot release funds from an account with status ${account.status}.`,
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const balanceBefore = toDecimal(account.balance);
+        const availableBefore = toDecimal(account.availableBalance);
+        const ledgerBefore = toDecimal(account.ledgerBalance);
+
+        if (ledgerBefore.lt(amount)) {
+          const error = new Error(
+            "Insufficient ledger balance. The release amount cannot exceed the customer's ledger balance.",
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+
+        // Total balance does not change.
+        const balanceAfter = balanceBefore;
+
+        // The exact released amount enters available balance.
+        const availableAfter = availableBefore.add(amount);
+
+        // The same amount leaves ledger balance.
+        const ledgerAfter = ledgerBefore.sub(amount);
+
+        const reference = await generateReference("REL");
+
+        const transaction = await tx.transaction.create({
+          data: {
+            reference,
+            userId: customerId,
+            accountId,
+            currencyId: account.currencyId,
+            type: "ADJUSTMENT",
+            status: "COMPLETED",
+            amount,
+            fee: toDecimal(0),
+            total: amount,
+            description,
+            metadata: {
+              operation: "ADMIN_LEDGER_RELEASE",
+              adminId,
+              previousLedgerBalance: ledgerBefore.toString(),
+              newLedgerBalance: ledgerAfter.toString(),
+              previousAvailableBalance: availableBefore.toString(),
+              newAvailableBalance: availableAfter.toString(),
+            },
+          },
+          include: {
+            account: {
+              select: {
+                id: true,
+                accountNumber: true,
+              },
+            },
+            currency: true,
+          },
+        });
+
+        // Only release funds that are still in the ledger.
+        const updateResult = await tx.account.updateMany({
+          where: {
+            id: accountId,
+            userId: customerId,
+            status: "ACTIVE",
+            ledgerBalance: {
+              gte: amount,
+            },
+          },
+          data: {
+            availableBalance: {
+              increment: amount,
+            },
+            ledgerBalance: {
+              decrement: amount,
+            },
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          const error = new Error(
+            "Ledger balance changed during release. Refresh the account and try again.",
+          );
+          error.statusCode = 409;
+          throw error;
+        }
+
+        const updatedAccount = await tx.account.findUnique({
+          where: { id: accountId },
+          include: { currency: true },
+        });
+
+        await tx.ledgerEntry.create({
+          data: {
+            accountId,
+            transactionId: transaction.id,
+            type: "CREDIT",
+            amount,
+
+            // The total account balance remains unchanged.
+            balanceBefore,
+            balanceAfter,
+
+            description:
+              `Ledger funds released into available balance. ${description}`,
+          },
+        });
+
+        await createAuditLog({
+          tx,
+          adminId,
+          userId: customerId,
+          action: "UPDATE",
+          entity: "Account",
+          entityId: accountId,
+          description: `Administrator released ${amount.toString()} ${account.currency?.code || ""} from ledger balance into available balance for account ${account.accountNumber}.`,
+          metadata: {
+            operation: "ADMIN_LEDGER_RELEASE",
+            transactionId: transaction.id,
+            reference,
+            amount: amount.toString(),
+            accountNumber: account.accountNumber,
+            balances: {
+              totalBefore: balanceBefore.toString(),
+              totalAfter: balanceAfter.toString(),
+              availableBefore: availableBefore.toString(),
+              availableAfter: availableAfter.toString(),
+              ledgerBefore: ledgerBefore.toString(),
+              ledgerAfter: ledgerAfter.toString(),
+            },
+          },
+          ipAddress: req.ip,
+        });
+
+        return {
+          transaction,
+          account: updatedAccount,
+          balanceBefore,
+          balanceAfter,
+          availableBefore,
+          availableAfter,
+          ledgerBefore,
+          ledgerAfter,
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Ledger funds released successfully into the customer's available balance.",
+      data: {
+        transaction: serializeTransaction(result.transaction),
+        account: serializeAccount(result.account),
+        balances: {
+          total: {
+            before: serializeMoney(result.balanceBefore),
+            after: serializeMoney(result.balanceAfter),
+          },
+          available: {
+            before: serializeMoney(result.availableBefore),
+            after: serializeMoney(result.availableAfter),
+          },
+          ledger: {
+            before: serializeMoney(result.ledgerBefore),
+            after: serializeMoney(result.ledgerAfter),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 
 // ============================================================
 // DEBIT CUSTOMER ACCOUNT
 // ============================================================
 
-export const debitCustomerAccount =
-  async (
-    req,
-    res,
-    next,
-  ) => {
-    try {
-      const customerId =
-        assertRequired(
-          req.params.userId,
-          "Customer ID",
+
+export const debitCustomerAccount = async (req, res, next) => {
+  try {
+    const customerId = assertRequired(req.params.userId, "Customer ID");
+    const accountId = assertRequired(req.params.accountId, "Account ID");
+    const amount = assertPositiveAmount(req.body?.amount);
+
+    const description =
+      normalizeString(req.body?.description) ||
+      "Administrative account debit";
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const account = await assertCustomerOwnsAccount(
+          tx,
+          customerId,
+          accountId,
         );
 
-      const accountId =
-        assertRequired(
-          req.params.accountId,
-          "Account ID",
-        );
-
-      const amount =
-        assertPositiveAmount(
-          req.body?.amount,
-        );
-
-      const description =
-        normalizeString(
-          req.body?.description,
-        ) ||
-        "Administrative account debit";
-
-      const result =
-        await prisma.$transaction(
-          async (tx) => {
-            const account =
-              await assertCustomerOwnsAccount(
-                tx,
-                customerId,
-                accountId,
-              );
-
-            if (
-              account.status !==
-              "ACTIVE"
-            ) {
-              const error =
-                new Error(
-                  `Cannot debit an account with status ${account.status}.`,
-                );
-
-              error.statusCode =
-                400;
-
-              throw error;
-            }
-
-            const balanceBefore =
-              toDecimal(
-                account.balance,
-              );
-
-            if (
-              balanceBefore.lt(
-                amount,
-              )
-            ) {
-              const error =
-                new Error(
-                  "Insufficient account balance.",
-                );
-
-              error.statusCode =
-                400;
-
-              throw error;
-            }
-
-            const balanceAfter =
-              balanceBefore.sub(
-                amount,
-              );
-
-            const availableBefore =
-              toDecimal(
-                account.availableBalance,
-              );
-
-            if (
-              availableBefore.lt(
-                amount,
-              )
-            ) {
-              const error =
-                new Error(
-                  "Insufficient available balance.",
-                );
-
-              error.statusCode =
-                400;
-
-              throw error;
-            }
-
-            const availableAfter =
-              availableBefore.sub(
-                amount,
-              );
-
-            const ledgerBefore =
-              toDecimal(
-                account.ledgerBalance,
-              );
-
-            if (
-              ledgerBefore.lt(
-                amount,
-              )
-            ) {
-              const error =
-                new Error(
-                  "Insufficient ledger balance.",
-                );
-
-              error.statusCode =
-                400;
-
-              throw error;
-            }
-
-            const ledgerAfter =
-              ledgerBefore.sub(
-                amount,
-              );
-
-            const reference =
-              await generateReference(
-                "ADJ",
-              );
-
-            const transaction =
-              await tx.transaction.create({
-                data: {
-                  reference,
-
-                  userId:
-                    customerId,
-
-                  accountId:
-                    accountId,
-
-                  currencyId:
-                    account.currencyId,
-
-                  type:
-                    "ADJUSTMENT",
-
-                  status:
-                    "COMPLETED",
-
-                  amount,
-
-                  fee:
-                    toDecimal(0),
-
-                  total:
-                    amount,
-
-                  description,
-
-                  metadata: {
-                    operation:
-                      "ADMIN_DEBIT",
-
-                    adminId:
-                      req.user.id,
-                  },
-                },
-
-                include: {
-                  account: {
-                    select: {
-                      id: true,
-
-                      accountNumber:
-                        true,
-                    },
-                  },
-
-                  currency:
-                    true,
-                },
-              });
-
-            const updatedAccount =
-              await tx.account.update({
-                where: {
-                  id:
-                    accountId,
-                },
-
-                data: {
-                  balance:
-                    balanceAfter,
-
-                  availableBalance:
-                    availableAfter,
-
-                  ledgerBalance:
-                    ledgerAfter,
-                },
-
-                include: {
-                  currency:
-                    true,
-                },
-              });
-
-            await tx.ledgerEntry.create({
-              data: {
-                accountId:
-                  accountId,
-
-                transactionId:
-                  transaction.id,
-
-                type:
-                  "DEBIT",
-
-                amount,
-
-                balanceBefore,
-
-                balanceAfter,
-
-                description,
-              },
-            });
-
-            await createAuditLog({
-              tx,
-
-              adminId:
-                req.user.id,
-
-              userId:
-                customerId,
-
-              action:
-                "WITHDRAWAL",
-
-              entity:
-                "Account",
-
-              entityId:
-                accountId,
-
-              description:
-                `Administrator debited ${amount.toString()} ${account.currency?.code || ""} from account ${account.accountNumber}.`,
-
-              metadata: {
-                operation:
-                  "ADMIN_DEBIT",
-
-                transactionId:
-                  transaction.id,
-
-                reference,
-
-                amount:
-                  amount.toString(),
-
-                accountNumber:
-                  account.accountNumber,
-              },
-
-              ipAddress:
-                req.ip,
-            });
-
-            return {
-              transaction,
-
-              account:
-                updatedAccount,
-
-              balanceBefore,
-
-              balanceAfter,
-            };
+        if (account.status !== "ACTIVE") {
+          const error = new Error(
+            `Cannot debit an account with status ${account.status}.`,
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const balanceBefore = toDecimal(account.balance);
+        const availableBefore = toDecimal(account.availableBalance);
+        const ledgerBefore = toDecimal(account.ledgerBalance);
+
+        if (availableBefore.lt(amount)) {
+          const error = new Error(
+            "Insufficient available balance. Funds in ledger balance cannot be spent.",
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+
+        if (balanceBefore.lt(amount)) {
+          const error = new Error("Insufficient total account balance.");
+          error.statusCode = 400;
+          throw error;
+        }
+
+        // Spending reduces total balance.
+        const balanceAfter = balanceBefore.sub(amount);
+
+        // Spending reduces available balance.
+        const availableAfter = availableBefore.sub(amount);
+
+        // Ledger balance remains unchanged.
+        const ledgerAfter = ledgerBefore;
+
+        const reference = await generateReference("ADJ");
+
+        const transaction = await tx.transaction.create({
+          data: {
+            reference,
+            userId: customerId,
+            accountId,
+            currencyId: account.currencyId,
+            type: "ADJUSTMENT",
+            status: "COMPLETED",
+            amount,
+            fee: toDecimal(0),
+            total: amount,
+            description,
+            metadata: {
+              operation: "ADMIN_DEBIT",
+              adminId: req.user.id,
+              ledgerBalanceChanged: false,
+            },
           },
-        );
+          include: {
+            account: {
+              select: {
+                id: true,
+                accountNumber: true,
+              },
+            },
+            currency: true,
+          },
+        });
 
-      return res.status(200).json({
-        success: true,
+        const updateResult = await tx.account.updateMany({
+          where: {
+            id: accountId,
+            userId: customerId,
+            status: "ACTIVE",
+            availableBalance: {
+              gte: amount,
+            },
+          },
+          data: {
+            balance: {
+              decrement: amount,
+            },
+            availableBalance: {
+              decrement: amount,
+            },
+          },
+        });
 
-        message:
-          "Customer account debited successfully.",
+        if (updateResult.count !== 1) {
+          const error = new Error(
+            "Available balance changed during debit. Refresh the account and try again.",
+          );
+          error.statusCode = 409;
+          throw error;
+        }
 
-        data: {
-          transaction:
-            serializeTransaction(
-              result.transaction,
-            ),
+        const updatedAccount = await tx.account.findUnique({
+          where: { id: accountId },
+          include: { currency: true },
+        });
 
-          account:
-            serializeAccount(
-              result.account,
-            ),
+        await tx.ledgerEntry.create({
+          data: {
+            accountId,
+            transactionId: transaction.id,
+            type: "DEBIT",
+            amount,
+            balanceBefore,
+            balanceAfter,
+            description,
+          },
+        });
 
-          balance: {
-            before:
-              serializeMoney(
-                result.balanceBefore,
-              ),
+        await createAuditLog({
+          tx,
+          adminId: req.user.id,
+          userId: customerId,
+          action: "WITHDRAWAL",
+          entity: "Account",
+          entityId: accountId,
+          description: `Administrator debited ${amount.toString()} ${account.currency?.code || ""} from account ${account.accountNumber}.`,
+          metadata: {
+            operation: "ADMIN_DEBIT",
+            transactionId: transaction.id,
+            reference,
+            amount: amount.toString(),
+            accountNumber: account.accountNumber,
+            balances: {
+              totalBefore: balanceBefore.toString(),
+              totalAfter: balanceAfter.toString(),
+              availableBefore: availableBefore.toString(),
+              availableAfter: availableAfter.toString(),
+              ledgerBefore: ledgerBefore.toString(),
+              ledgerAfter: ledgerAfter.toString(),
+            },
+          },
+          ipAddress: req.ip,
+        });
 
-            after:
-              serializeMoney(
-                result.balanceAfter,
-              ),
+        return {
+          transaction,
+          account: updatedAccount,
+          balanceBefore,
+          balanceAfter,
+          availableBefore,
+          availableAfter,
+          ledgerBefore,
+          ledgerAfter,
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Customer account debited successfully.",
+      data: {
+        transaction: serializeTransaction(result.transaction),
+        account: serializeAccount(result.account),
+        balances: {
+          total: {
+            before: serializeMoney(result.balanceBefore),
+            after: serializeMoney(result.balanceAfter),
+          },
+          available: {
+            before: serializeMoney(result.availableBefore),
+            after: serializeMoney(result.availableAfter),
+          },
+          ledger: {
+            before: serializeMoney(result.ledgerBefore),
+            after: serializeMoney(result.ledgerAfter),
           },
         },
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
   /*
 // ============================================================
@@ -4240,15 +4221,10 @@ export default {
   updateCustomerStatus,
   updateAccountStatus,
   creditCustomerAccount,
+  releaseCustomerLedgerBalance,
   debitCustomerAccount,
   getAdminAuditLogs,
+  getAdminStatistics,
+  getAdminTransactions,
+  updateAdminTransactionStatus,
 };
-
-
-
-
-
-
-
-
-

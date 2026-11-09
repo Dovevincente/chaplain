@@ -103,7 +103,7 @@ const getDescription = (log) =>
   "";
 
 const getStatus = (log) =>
-  String(log?.status || log?.result || "SUCCESS").toUpperCase();
+  String(log?.status || log?.result || "UNKNOWN").toUpperCase();
 
 const getTimestamp = (log) =>
   log?.createdAt ||
@@ -261,7 +261,11 @@ const AdminAuditLogs = () => {
         "Unable to load administrative audit logs.";
 
       setError(message);
-      setLogs([]);
+
+      // Keep previously loaded records visible when a manual refresh fails.
+      if (!isRefresh) {
+        setLogs([]);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -448,8 +452,7 @@ const AdminAuditLogs = () => {
       </div>
     );
   }
-
-  return (
+    return (
     <div className="min-h-full bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-3xl bg-slate-950 p-5 text-white shadow-sm sm:p-7">
@@ -466,7 +469,7 @@ const AdminAuditLogs = () => {
 
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
                 Review security-sensitive administrative and financial
-                activity recorded by the The Chaplaincy Savings and Credit Union (TCSCU) backend.
+                activity recorded by the TCSCU backend.
               </p>
             </div>
 
@@ -736,8 +739,6 @@ const AdminAuditLogs = () => {
                               View
                             </button>
                           </td>
-
-                          {description ? null : null}
                         </tr>
                       );
                     })}
@@ -745,7 +746,7 @@ const AdminAuditLogs = () => {
                 </table>
               </div>
 
-              {/* Mobile */}
+                            {/* Mobile */}
               <div className="divide-y divide-slate-100 lg:hidden">
                 {visibleLogs.map((log, index) => {
                   const actor = getActor(log);
@@ -889,7 +890,7 @@ const AdminAuditLogs = () => {
           <p>
             Audit records are security-sensitive information. This interface
             is only a presentation layer; authorization, audit integrity and
-            access control must remain enforced by the The Chaplaincy Savings and Credit Union (TCSCU) backend.
+            access control must remain enforced by the TCSCU backend.
           </p>
         </div>
       </div>
@@ -995,8 +996,7 @@ const AdminAuditLogs = () => {
                     "No description was recorded for this event."}
                 </div>
               </div>
-
-              <div>
+                            <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Event record
                 </p>

@@ -1,4 +1,3 @@
-
 import {
   registerUser,
   loginUser,
@@ -40,6 +39,9 @@ const clearAuthCookies = (res) => {
   );
 };
 
+/**
+ * REGISTER
+ */
 export const register = async (req, res, next) => {
   try {
     const {
@@ -47,19 +49,46 @@ export const register = async (req, res, next) => {
       phone,
       password,
       firstName,
+      middleName,
       lastName,
+      dateOfBirth,
+      nationality,
       country,
+      state,
+      stateProvince,
+      city,
+      address,
+      addressLine2,
+      postalCode,
       accountType,
+      currency,
     } = req.validated.body;
 
     const result = await registerUser({
       email,
       phone,
       password,
+
+      // Personal information
       firstName,
+      middleName,
       lastName,
+      dateOfBirth,
+      nationality,
+
+      // Residential address
       country,
+      state: state || stateProvince,
+      city,
+      address,
+      addressLine2,
+      postalCode,
+
+      // Account configuration
       accountType,
+      currency,
+
+      // Request metadata
       ipAddress: req.ip,
       userAgent: req.get("user-agent"),
     });
@@ -85,6 +114,9 @@ export const register = async (req, res, next) => {
   }
 };
 
+/**
+ * LOGIN
+ */
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.validated.body;
@@ -114,6 +146,9 @@ export const login = async (req, res, next) => {
   }
 };
 
+/**
+ * REFRESH ACCESS TOKEN
+ */
 export const refresh = async (req, res) => {
   const refreshToken =
     req.cookies?.[AUTH.REFRESH_TOKEN_COOKIE];
@@ -166,6 +201,9 @@ export const refresh = async (req, res) => {
   }
 };
 
+/**
+ * LOGOUT
+ */
 export const logout = async (req, res, next) => {
   try {
     const refreshToken =

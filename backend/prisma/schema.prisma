@@ -44,6 +44,7 @@ enum AccountType {
   INVESTMENT
   NON_RESIDENT
   DOMICILIARY
+  ESCROW
 }
 
 enum ResidencyStatus {
@@ -395,8 +396,10 @@ model Profile {
   state String?
   city  String?
 
-  address    String?
-  postalCode String?
+  // Residential or business address details.
+  address      String?
+  addressLine2 String?
+  postalCode   String?
 
   profileImage String?
 
@@ -689,7 +692,6 @@ model Transfer {
   @@index([createdAt])
 }
 
-
 // ============================================================
 // BANK TRANSFER OTP CHALLENGES
 // ============================================================
@@ -698,7 +700,7 @@ model TransferOtpChallenge {
   id String @id @default(cuid())
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   channel TransferOtpChannel
 
@@ -713,7 +715,7 @@ model TransferOtpChallenge {
 
   expiresAt DateTime
 
-  attempts Int @default(0)
+  attempts    Int @default(0)
   maxAttempts Int @default(5)
 
   verifiedAt DateTime?
@@ -727,7 +729,6 @@ model TransferOtpChallenge {
   @@index([consumedAt])
   @@index([userId, createdAt])
 }
-
 
 // ============================================================
 // DEPOSITS

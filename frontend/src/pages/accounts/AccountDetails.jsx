@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -92,7 +93,7 @@ const AccountDetailsSkeleton = () => {
           <div className="mt-2 h-5 w-96 max-w-full animate-pulse rounded bg-slate-200" />
         </div>
 
-        <div className="h-[300px] animate-pulse rounded-3xl bg-slate-950" />
+        <div className="h-[340px] animate-pulse rounded-3xl bg-slate-950" />
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -136,17 +137,13 @@ const AccountDetails = () => {
       setError("");
 
       try {
-        const response = await api.get(
-          `/accounts/${accountId}`,
-        );
+        const response = await api.get(`/accounts/${accountId}`);
 
-        const nextAccount = extractAccount(
-          response?.data,
-        );
+        const nextAccount = extractAccount(response?.data);
 
         if (!nextAccount) {
           throw new Error(
-            "The account information could not be read from the server.",
+            "The account information could not be read from the server."
           );
         }
 
@@ -164,47 +161,36 @@ const AccountDetails = () => {
         setRefreshing(false);
       }
     },
-    [accountId],
+    [accountId]
   );
 
   useEffect(() => {
     loadAccount();
   }, [loadAccount]);
 
-  const currencyCode =
-    account?.currency?.code || "USD";
+  const currencyCode = account?.currency?.code || "USD";
+  const accountNumber = account?.accountNumber || "";
 
-  const accountNumber =
-    account?.accountNumber || "";
+  // Total balance: all funds in the account.
+  const totalBalance = Number(account?.balance ?? 0);
 
-  const availableBalance = Number(
-    account?.availableBalance ?? 0,
-  );
+  // Available balance: funds the customer can spend or transfer.
+  const availableBalance = Number(account?.availableBalance ?? 0);
 
-  const ledgerBalance = Number(
-    account?.ledgerBalance ?? 0,
-  );
+  // Ledger balance: funds held pending authorised release.
+  const ledgerBalance = Number(account?.ledgerBalance ?? 0);
 
-  const minimumBalance = Number(
-    account?.minimumBalance ?? 0,
-  );
+  const minimumBalance = Number(account?.minimumBalance ?? 0);
 
-  const accountType = formatAccountType(
-    account?.type,
-  );
-
-  const accountStatus =
-    account?.status || "UNKNOWN";
+  const accountType = formatAccountType(account?.type);
+  const accountStatus = account?.status || "UNKNOWN";
 
   const displayedAccountNumber = useMemo(() => {
     if (!accountNumber) {
       return "Not available";
     }
 
-    if (
-      showAccountNumber ||
-      accountNumber.length <= 4
-    ) {
+    if (showAccountNumber || accountNumber.length <= 4) {
       return accountNumber;
     }
 
@@ -217,10 +203,7 @@ const AccountDetails = () => {
     }
 
     try {
-      await navigator.clipboard.writeText(
-        accountNumber,
-      );
-
+      await navigator.clipboard.writeText(accountNumber);
       setCopied(true);
 
       window.setTimeout(() => {
@@ -258,8 +241,7 @@ const AccountDetails = () => {
             </h1>
 
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">
-              {error ||
-                "The requested account could not be found."}
+              {error || "The requested account could not be found."}
             </p>
 
             <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
@@ -312,15 +294,14 @@ const AccountDetails = () => {
               </h1>
 
               <p className="mt-2 text-sm text-slate-500 sm:text-base">
-                View your account information, balances and banking services.
+                View your total balance, available funds, ledger balance,
+                account information and banking services.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={() =>
-                loadAccount({ silent: true })
-              }
+              onClick={() => loadAccount({ silent: true })}
               disabled={refreshing}
               className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -341,16 +322,14 @@ const AccountDetails = () => {
           </div>
         )}
 
-        {/* Main balance card */}
+        {/* Main account balance card */}
         <section className="overflow-hidden rounded-3xl bg-slate-950 text-white shadow-xl">
           <div className="relative p-6 sm:p-8 lg:p-10">
-
             <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-white/5 blur-3xl" />
 
             <div className="absolute -bottom-40 left-1/3 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
 
             <div className="relative">
-
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -364,30 +343,60 @@ const AccountDetails = () => {
 
                 <span
                   className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ring-1 ${getStatusClasses(
-                    accountStatus,
+                    accountStatus
                   )}`}
                 >
                   {accountStatus}
                 </span>
               </div>
 
+              {/* Total balance */}
               <div className="mt-8">
                 <p className="text-sm font-medium text-slate-400">
-                  Available Balance
+                  Total Balance
                 </p>
 
                 <p className="mt-2 break-words text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-                  {formatMoney(
-                    availableBalance,
-                    currencyCode,
-                  )}
+                  {formatMoney(totalBalance, currencyCode)}
                 </p>
 
                 <p className="mt-2 text-xs text-slate-500">
-                  Funds currently available for eligible banking operations.
+                  Your complete account balance, including ledger funds.
                 </p>
               </div>
 
+              {/* Available and ledger breakdown */}
+              <div className="mt-8 grid grid-cols-1 gap-5 border-t border-white/10 pt-6 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
+                    Available Balance
+                  </p>
+
+                  <p className="mt-2 break-words text-2xl font-bold text-white sm:text-3xl">
+                    {formatMoney(availableBalance, currencyCode)}
+                  </p>
+
+                  <p className="mt-2 text-xs text-slate-400">
+                    Funds available for eligible transfers and payments.
+                  </p>
+                </div>
+
+                <div className="sm:border-l sm:border-white/10 sm:pl-6">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">
+                    Ledger Balance
+                  </p>
+
+                  <p className="mt-2 break-words text-2xl font-bold text-white sm:text-3xl">
+                    {formatMoney(ledgerBalance, currencyCode)}
+                  </p>
+
+                  <p className="mt-2 text-xs text-slate-400">
+                    Funds held until authorised release.
+                  </p>
+                </div>
+              </div>
+
+              {/* Account number */}
               <div className="mt-8 border-t border-white/10 pt-6">
                 <p className="text-xs uppercase tracking-wider text-slate-500">
                   Account Number
@@ -403,9 +412,7 @@ const AccountDetails = () => {
                       <button
                         type="button"
                         onClick={() =>
-                          setShowAccountNumber(
-                            (current) => !current,
-                          )
+                          setShowAccountNumber((current) => !current)
                         }
                         className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
                         aria-label={
@@ -433,31 +440,71 @@ const AccountDetails = () => {
                   )}
                 </div>
               </div>
-
             </div>
           </div>
         </section>
 
         {/* Account metrics */}
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
+          {/* Total balance */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+              <Landmark className="h-5 w-5" />
+            </div>
+
+            <p className="mt-4 text-xs font-medium uppercase tracking-wider text-slate-400">
+              Total Balance
+            </p>
+
+            <p className="mt-2 break-words text-lg font-bold text-slate-950">
+              {formatMoney(totalBalance, currencyCode)}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Complete account funds.
+            </p>
+          </div>
+
+          {/* Available balance */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
               <WalletCards className="h-5 w-5" />
+            </div>
+
+            <p className="mt-4 text-xs font-medium uppercase tracking-wider text-slate-400">
+              Available Balance
+            </p>
+
+            <p className="mt-2 break-words text-lg font-bold text-slate-950">
+              {formatMoney(availableBalance, currencyCode)}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Available for eligible transactions.
+            </p>
+          </div>
+
+          {/* Ledger balance */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+              <CreditCard className="h-5 w-5" />
             </div>
 
             <p className="mt-4 text-xs font-medium uppercase tracking-wider text-slate-400">
               Ledger Balance
             </p>
 
-            <p className="mt-2 text-lg font-bold text-slate-950">
-              {formatMoney(
-                ledgerBalance,
-                currencyCode,
-              )}
+            <p className="mt-2 break-words text-lg font-bold text-slate-950">
+              {formatMoney(ledgerBalance, currencyCode)}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Awaiting authorised release.
             </p>
           </div>
 
+          {/* Account type */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
               <Landmark className="h-5 w-5" />
@@ -472,6 +519,7 @@ const AccountDetails = () => {
             </p>
           </div>
 
+          {/* Currency */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
               <CreditCard className="h-5 w-5" />
@@ -492,6 +540,7 @@ const AccountDetails = () => {
             )}
           </div>
 
+          {/* Minimum balance */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
               <ShieldCheck className="h-5 w-5" />
@@ -502,13 +551,31 @@ const AccountDetails = () => {
             </p>
 
             <p className="mt-2 text-lg font-bold text-slate-950">
-              {formatMoney(
-                minimumBalance,
-                currencyCode,
-              )}
+              {formatMoney(minimumBalance, currencyCode)}
             </p>
           </div>
+        </section>
 
+        {/* Balance explanation */}
+        <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+          <div className="flex items-start gap-3">
+            <WalletCards className="mt-0.5 h-5 w-5 shrink-0 text-slate-600" />
+
+            <div>
+              <h2 className="font-semibold text-slate-950">
+                Understanding your account balances
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Your total balance represents all funds held in your
+                account. This includes both your available balance and
+                ledger balance. Available funds can be used for eligible
+                transactions. Ledger funds are not available for spending
+                or transfers until an authorised administrator releases
+                them.
+              </p>
+            </div>
+          </div>
         </section>
 
         {/* Account information */}
@@ -571,14 +638,21 @@ const AccountDetails = () => {
 
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Total Balance
+              </p>
+
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {formatMoney(totalBalance, currencyCode)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                 Available Balance
               </p>
 
               <p className="mt-2 text-sm font-semibold text-slate-900">
-                {formatMoney(
-                  availableBalance,
-                  currencyCode,
-                )}
+                {formatMoney(availableBalance, currencyCode)}
               </p>
             </div>
 
@@ -588,17 +662,33 @@ const AccountDetails = () => {
               </p>
 
               <p className="mt-2 text-sm font-semibold text-slate-900">
-                {formatMoney(
-                  ledgerBalance,
-                  currencyCode,
-                )}
+                {formatMoney(ledgerBalance, currencyCode)}
               </p>
             </div>
 
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Currency
+              </p>
+
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {currencyCode}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Minimum Balance
+              </p>
+
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {formatMoney(minimumBalance, currencyCode)}
+              </p>
+            </div>
           </div>
         </section>
 
-        {/* Actions */}
+        {/* Account services */}
         <section className="mt-8">
           <div className="mb-4">
             <h2 className="text-lg font-bold text-slate-950">
@@ -615,9 +705,7 @@ const AccountDetails = () => {
             <button
               type="button"
               onClick={() =>
-                navigate(
-                  `/accounts/${account.id}/statement`,
-                )
+                navigate(`/accounts/${account.id}/statement`)
               }
               className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md"
             >
@@ -640,9 +728,7 @@ const AccountDetails = () => {
 
             <button
               type="button"
-              onClick={() =>
-                navigate("/transactions")
-              }
+              onClick={() => navigate("/transactions")}
               className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md"
             >
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
@@ -664,9 +750,7 @@ const AccountDetails = () => {
 
             <button
               type="button"
-              onClick={() =>
-                navigate("/transfers/internal")
-              }
+              onClick={() => navigate("/transfers/internal")}
               className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md"
             >
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
@@ -703,8 +787,8 @@ const AccountDetails = () => {
 
               <p className="mt-1 text-sm leading-6 text-slate-500">
                 Never share your login credentials, passwords, one-time
-                verification codes or other security information with another
-                person.
+                verification codes or other security information with
+                another person.
               </p>
             </div>
           </div>
@@ -722,7 +806,6 @@ const AccountDetails = () => {
             </p>
           </div>
         </footer>
-
       </div>
     </main>
   );
